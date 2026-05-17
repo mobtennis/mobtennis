@@ -1,0 +1,44 @@
+[Unit]
+Description=Tennismob FastAPI backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tennismob
+Group=tennismob
+WorkingDirectory=/opt/tennismob/backend
+EnvironmentFile=/opt/tennismob/backend/.env
+
+# --workers 1 is intentional. APScheduler holds in-process state (jobs,
+# adaptive cadence, the live-poll task) — multiple workers would each spawn
+# the scheduler and duplicate every poll, blowing the api-tennis quota.
+ExecStart=/opt/tennismob/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+
+Restart=on-failure
+RestartSec=5
+
+# Memory caps on the 2 GB box. We use MemoryMax only as a hard ceiling
+# — if uvicorn ever balloons past this it gets OOM-killed cleanly and
+# Restart=on-failure brings it back, instead of the kernel reaping a
+# random user-space process (which previously manifested as DNS
+# breaking when systemd-resolved got flushed under pressure).
+#
+# No MemoryHigh: setting it close to normal working set thrashes the
+# kernel into constant reclaim-and-swap (uvicorn ended up at 1.4G of
+# swap with the event loop stalled). Swap + MemoryMax alone gives a
+# clean failure mode without the death-spiral.
+MemoryMax=1700M
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/tennismob/data
+PrivateTmp=true
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink-950 text-text-primary font-sans antialiased;
+  background-image:
+    radial-gradient(circle at top, rgba(245, 158, 11, 0.06), transparent 40%),
+    radial-gradient(circle at bottom right, rgba(63, 170, 94, 0.05), transparent 40%);
+}
+
+/* Tabular numerics for scores */
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* Mobile-safe area for bottom nav */
+.safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+
+/* Hide scrollbars on horizontal scrollers */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+a { color: inherit; }

@@ -1,0 +1,27 @@
+# Caddy auto-issues a Let's Encrypt cert for api.mob.tennis on first boot —
+# no extra config required. Make sure ports 80 + 443 are open on the
+# Lightsail firewall (22 stays open for SSH).
+
+api.mob.tennis {
+    encode gzip zstd
+
+    # SSE: stream events through without buffering. flush_interval -1 means
+    # flush after every write — required so EventSource clients see events
+    # immediately instead of in big batches at proxy-buffer boundaries.
+    @sse path /api/stream
+    reverse_proxy @sse 127.0.0.1:8000 {
+        flush_interval -1
+    }
+
+    reverse_proxy 127.0.0.1:8000
+
+    # Reasonable defaults; tighten if/when we add a CSP.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        # Caddy's default is fine; we just don't want to leak the FastAPI
+        # version banner.
+        -Server
+    }
+}

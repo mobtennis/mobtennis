@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Mobtennis",
+    "slug": "mobtennis",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "mobtennis",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mobtennis.app"
+    },
+    "android": {
+      "package": "com.mobtennis.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#FAF7F0"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiBaseUrl": "https://api.mob.tennis"
+    }
+  }
+}
