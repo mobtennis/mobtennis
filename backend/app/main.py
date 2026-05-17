@@ -69,16 +69,21 @@ def _disk_pct() -> int:
 
 
 async def _memory_sampler() -> None:
-    """Once a minute, log RSS + disk + concurrency even when idle."""
+    """Once a minute, log RSS + disk + concurrency + SSE subscriber count.
+    Subscriber count surfaces SSE connection leaks (silently-half-open
+    streams that accumulate behind buffering proxies); paired with RSS
+    it's the fastest signal that the live hub is leaking."""
+    from app.services.live_hub import hub as live_hub
     while True:
         try:
             await asyncio.sleep(60)
             mem_log.info(
-                "rss=%dM peak=%dM disk=%d%% in_flight=%d",
+                "rss=%dM peak=%dM disk=%d%% in_flight=%d sse=%d",
                 _current_rss_kb() // 1024,
                 _peak_rss_kb() // 1024,
                 _disk_pct(),
                 _in_flight,
+                live_hub.subscriber_count,
             )
         except asyncio.CancelledError:
             raise
