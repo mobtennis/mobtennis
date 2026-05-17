@@ -12,7 +12,7 @@ import {
   type VideoItemSummary,
 } from "@/lib/api";
 import { AdSlot } from "@/components/AdSlot";
-import { LiveStreamRefresh } from "@/components/LiveStreamRefresh";
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { Bracket } from "@/components/Bracket";
 import { ChampionsList } from "@/components/ChampionsList";
 import { Countdown } from "@/components/Countdown";
@@ -122,7 +122,7 @@ export default async function TournamentPage({ params }: { params: Params }) {
 
   return (
     <div className="space-y-6">
-      <LiveStreamRefresh enabled={live.some((m) => m.status === "live" || m.status === "suspended")} />
+      <AutoRefresh enabled={live.some((m) => m.status === "live" || m.status === "suspended")} intervalMs={15_000} />
       <TrackOnMount
         event={EVENTS.tournamentOpened}
         properties={{

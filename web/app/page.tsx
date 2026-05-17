@@ -7,9 +7,9 @@ import {
   type VideoItemSummary,
 } from "@/lib/api";
 import { AdSlot } from "@/components/AdSlot";
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { FeedList } from "@/components/FeedList";
 import { HappeningNow } from "@/components/HappeningNow";
-import { LiveStreamRefresh } from "@/components/LiveStreamRefresh";
 import { SectionHeader } from "@/components/SectionHeader";
 import { isLocalToday } from "@/lib/format";
 
@@ -51,7 +51,13 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-6">
-      <LiveStreamRefresh enabled={todaysLive.some((m) => m.status === "live" || m.status === "suspended")} />
+      {/* Reverted from SSE-based LiveStreamRefresh: the unfiltered
+          /api/stream subscription leaked memory on the backend (every
+          tab opens a persistent connection; each connection holds a
+          fan-out queue; under traffic the cumulative state OOM'd the
+          box twice in one afternoon). Polling is unglamorous but
+          bounded. Revisit once the SSE handler is hardened. */}
+      <AutoRefresh enabled={todaysLive.some((m) => m.status === "live" || m.status === "suspended")} intervalMs={15_000} />
 
       <HappeningNow
         liveMatches={todaysLive}

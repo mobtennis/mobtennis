@@ -11,7 +11,7 @@ import {
   type VideoItemSummary,
 } from "@/lib/api";
 import { AdSlot } from "@/components/AdSlot";
-import { LiveStreamRefresh } from "@/components/LiveStreamRefresh";
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { ExternalLinks } from "@/components/ExternalLinks";
 import { FeedList } from "@/components/FeedList";
 import { GetTheAppCard } from "@/components/GetTheAppCard";
@@ -50,7 +50,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ slug: s
 
   return (
     <div className="space-y-6">
-      <LiveStreamRefresh enabled={live.some((m) => m.status === "live" || m.status === "suspended")} />
+      <AutoRefresh enabled={live.some((m) => m.status === "live" || m.status === "suspended")} intervalMs={15_000} />
       <TrackOnMount
         event={EVENTS.playerOpened}
         properties={{ slug: player.slug, tour: player.tour }}
