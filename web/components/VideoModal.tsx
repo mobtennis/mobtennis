@@ -48,16 +48,30 @@ export function VideoModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        // Portrait: cap by viewport height (keeps the whole 9:16 frame
-        // visible without scrolling). Landscape: cap by viewport
-        // width, with a sensible max so it doesn't get absurd on
-        // wide monitors.
+        // Portrait + landscape need explicit intrinsic dimensions, not
+        // just an aspect-ratio + max-h/max-w: with only those, the
+        // element has no defined size on either axis and collapses
+        // to 0 inside the flex parent.
+        //
+        // Portrait: take the smaller of 90vh and (90vw * 16/9), so the
+        // frame fits both portrait and landscape device orientations.
+        // Width is derived from height via aspect-ratio.
+        //
+        // Landscape: w-full + max-w-3xl + aspect-video gives intrinsic
+        // width and derives height — works fine.
         className={
           portrait
-            ? "relative aspect-[9/16] max-h-[90vh]"
+            ? "relative"
             : "relative aspect-video w-full max-w-3xl"
         }
-        style={portrait ? { maxWidth: "calc(90vh * 9 / 16)" } : undefined}
+        style={
+          portrait
+            ? {
+                height: "min(90vh, calc(90vw * 16 / 9))",
+                aspectRatio: "9 / 16",
+              }
+            : undefined
+        }
       >
         <iframe
           src={`https://www.youtube-nocookie.com/embed/${video.video_id}?autoplay=1&rel=0&playsinline=1`}
