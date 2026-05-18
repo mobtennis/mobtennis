@@ -51,6 +51,15 @@ log = logging.getLogger(__name__)
 _DISAMBIG_RE = re.compile(r"\s*\([^)]+\)\s*$")
 
 
+# German convention: ö/ä/ü → oe/ae/ue, ß → ss. api-tennis uses this
+# form for German players (e.g., "Max Schönhaus" → "M. Schoenhaus" →
+# slug "m-schoenhaus"). Spanish/French/Italian diacritics get the
+# stripped form ("é" → "e") which is also what api-tennis does for
+# those languages, so we only special-case German.
+_DE_TRANS = str.maketrans({"ö": "oe", "ä": "ae", "ü": "ue", "ß": "ss",
+                            "Ö": "Oe", "Ä": "Ae", "Ü": "Ue"})
+
+
 def _ascii_lower_clean(s: str) -> str:
     """Drop diacritics, lowercase, no other transforms."""
     s = unicodedata.normalize("NFKD", s)
@@ -59,6 +68,11 @@ def _ascii_lower_clean(s: str) -> str:
 
 def _slugify(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", _ascii_lower_clean(s)).strip("-")
+
+
+def _slugify_de(s: str) -> str:
+    """German-style slug: ö/ä/ü/ß expanded BEFORE diacritic stripping."""
+    return _slugify(s.translate(_DE_TRANS))
 
 
 def _wikilink_to_slug(wikilink: str) -> str:
@@ -100,19 +114,22 @@ def _candidate_slugs(wikilink: str) -> list[str]:
     candidates: list[str] = []
     seen: set[str] = set()
 
-    def push(parts: list[str]) -> None:
+    def push(parts: list[str], *, de: bool = False) -> None:
         if not parts:
             return
-        slug = _slugify(" ".join(parts))
+        text = " ".join(parts)
+        slug = _slugify_de(text) if de else _slugify(text)
         if slug and slug not in seen:
             seen.add(slug)
             candidates.append(slug)
 
     # 1. Full canonical: "Juan Manuel Cerundolo" → "juan-manuel-cerundolo"
     push(tokens)
+    push(tokens, de=True)  # "Max Schönhaus" → "max-schoenhaus" (German style)
     # 2. Single first initial + last token: "j-cerundolo"
     if len(tokens) >= 2:
         push([tokens[0][:1], tokens[-1]])
+        push([tokens[0][:1], tokens[-1]], de=True)  # "m-schoenhaus"
     # 3. Initials of every pre-last token + last token:
     #    "Juan Manuel Cerúndolo" → "j-m-cerundolo"
     if len(tokens) >= 3:

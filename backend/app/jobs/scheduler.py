@@ -26,7 +26,7 @@ from app.services.news_fanout import fan_out as fan_out_news
 from app.services.youtube import sync_videos
 from app.services.rankings_sync import upsert_rankings
 from app.services.sync import upsert_live_matches
-from app.services.draws_wikipedia import scrape_pending_draws
+from app.services.wiki_brackets_job import scrape_pending_brackets
 from app.services.players_bio_enrich import enrich_pending as enrich_players_bios
 from app.services.players_socials_enrich import enrich_top_n as enrich_players_socials
 from app.services.tournaments_catalog import cleanup_prefixed_brands, upsert_catalog
@@ -469,17 +469,17 @@ async def _enrich_player_bios_job() -> None:
 
 
 async def _scrape_draws_job() -> None:
-    """Pull Wikipedia bracket structure for top-tier in-progress tournaments.
+    """Pull Wikipedia bracket structure for top-tier in-progress tournaments
+    via the new wiki_brackets pipeline.
 
-    Hourly cadence: draws change slowly (seeds locked at the draw ceremony,
-    a couple of days before play), but we want the bracket to populate
-    quickly once Wikipedia gets the draw. Per-tournament cost is one MediaWiki
-    API call (cached for ~30s upstream) + a name-lookup pass.
+    30-min cadence: Wikipedia editors propagate match results within
+    10-30 min of full time, so scraping any tighter is wasted requests
+    on unchanged pages. Per-tournament cost: one MediaWiki call + parse
+    + a few DB lookups. The job is idempotent — re-running on a clean
+    page is a no-op.
     """
     try:
-        updated = await scrape_pending_draws()
-        if updated:
-            log.info("wikipedia draws: updated %d match rows", updated)
+        await scrape_pending_brackets()
     except Exception:
         log.exception("wikipedia draw scrape failed")
 
@@ -646,16 +646,19 @@ def start_scheduler() -> None:
         id="recategorize_boot",
     )
 
-    # Wikipedia bracket scraper. Hourly cadence — draws barely change once
-    # locked in, but we want a fresh deploy to pick up the latest state
-    # quickly. Boot trigger runs ~20s in so the WS consumer is already
-    # seeded with matches the scraper can attach bracket info to.
+    # Wikipedia bracket scraper. 30-min cadence — Wikipedia editors update
+    # the bracket within 10-30 min of a match finishing, so anything
+    # tighter is wasted requests on unchanged pages. Boot trigger runs
+    # ~20s in so the WS consumer has had time to populate api-tennis
+    # rows the scraper can attach bracket info to (or adopt — see the
+    # orphan-row fallback in services/sync.py).
     _scheduler.add_job(
         _scrape_draws_job,
-        IntervalTrigger(hours=1),
+        IntervalTrigger(minutes=30),
         id="scrape_draws",
         max_instances=1,
         coalesce=True,
+        misfire_grace_time=600,
     )
     _scheduler.add_job(
         _scrape_draws_job,

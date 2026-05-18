@@ -149,6 +149,71 @@ def _upsert_tournament(session: Session, name: str, tour: Tour, year: int, surfa
     return t.id
 
 
+# Round-name synonyms used by _find_orphan_wiki_row. Wikipedia rows are
+# created with short codes (F, SF, QF, R16, ...) by app.services.
+# wiki_brackets_apply; api-tennis pushes verbose strings like
+# "ATP Rome - Final" / "1/8-final". Map one form to the other so the
+# orphan lookup can stitch a Wikipedia row to its live-update partner.
+_ROUND_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "f": ("final", " - final"),
+    "sf": ("semi-final", "semifinal"),
+    "qf": ("quarter-final", "quarterfinal"),
+    "r16": ("1/8-final", "fourth round"),
+    "r32": ("1/16-final", "third round"),
+    "r64": ("1/32-final", "second round"),
+    "r128": ("1/64-final", "first round"),
+}
+
+
+def _rounds_match(short_or_verbose: str, other: str) -> bool:
+    """Compare two round labels case-insensitively, treating either form
+    (short like 'F', verbose like 'ATP Rome - Final') as equivalent."""
+    a = short_or_verbose.lower().strip()
+    b = other.lower().strip()
+    if not a or not b:
+        return False
+    if a == b or a in b or b in a:
+        return True
+    # Try short → verbose
+    for short, verboses in _ROUND_SYNONYMS.items():
+        if (a == short and any(v in b for v in verboses)) or (
+            b == short and any(v in a for v in verboses)
+        ):
+            return True
+    return False
+
+
+def _find_orphan_wiki_row(
+    session: Session,
+    *,
+    tournament_id: int,
+    p1_id: int,
+    p2_id: int,
+    round_label: str,
+    is_doubles: bool,
+) -> Match | None:
+    """Look for a Match row that was created by the Wikipedia pipeline
+    (api_tennis_id IS NULL) and matches the same (tournament, player pair,
+    round) the api-tennis push is for. Used to adopt orphan Wikipedia rows
+    on first api-tennis sight, so we don't end up with two rows per
+    real-world match."""
+    candidates = session.exec(
+        select(Match).where(
+            Match.tournament_id == tournament_id,
+            Match.api_tennis_id.is_(None),
+            Match.is_doubles == is_doubles,
+        )
+    ).all()
+    target = {p1_id, p2_id}
+    for m in candidates:
+        pair = {m.player1_id, m.player2_id}
+        if pair != target:
+            continue
+        if _rounds_match(m.round or "", round_label):
+            return m
+    return None
+
+
 def upsert_live_matches(
     session: Session, live_matches: list[LiveMatch]
 ) -> tuple[int, list[MatchEvent]]:
@@ -173,6 +238,23 @@ def upsert_live_matches(
 
         stmt = select(Match).where(Match.api_tennis_id == lm.provider_match_id)
         match = session.exec(stmt).first()
+
+        # Fallback: row created earlier by the Wikipedia bracket pipeline
+        # has api_tennis_id=NULL but matches the same (tournament, player
+        # pair, round) — adopt it instead of creating a duplicate. After
+        # adoption, attach api_tennis_id so all subsequent live updates
+        # find it via the fast path above.
+        if match is None and p1 is not None and p2 is not None:
+            match = _find_orphan_wiki_row(
+                session,
+                tournament_id=tournament_id,
+                p1_id=p1.id,
+                p2_id=p2.id,
+                round_label=lm.round or "",
+                is_doubles=lm.is_doubles,
+            )
+            if match is not None:
+                match.api_tennis_id = lm.provider_match_id
 
         winner_id = None
         if lm.winner == 1 and p1:

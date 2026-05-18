@@ -123,9 +123,19 @@ _API = "https://en.wikipedia.org/w/api.php"
 
 def fetch_wikitext(page_title: str, client: httpx.Client | None = None) -> str:
     """Pull the wikitext for one tournament page. Tiny wrapper; broken out
-    so tests can pass canned input via parse_wikitext()."""
+    so tests can pass canned input via parse_wikitext().
+
+    User-Agent follows Wikipedia's API etiquette
+    (https://meta.wikimedia.org/wiki/User-Agent_policy): identifies the
+    tool + a contact URL. Generic "Mozilla/X.0" UAs are aggressively
+    rate-limited (429), which had been intermittently breaking apply
+    runs.
+    """
     own_client = client is None
-    c = client or httpx.Client(timeout=15.0, headers={"User-Agent": "Mobtennis/1.0"})
+    c = client or httpx.Client(
+        timeout=15.0,
+        headers={"User-Agent": "Mobtennis/1.0 (+https://mob.tennis; bot@mob.tennis)"},
+    )
     try:
         r = c.get(_API, params={
             "action": "parse",
