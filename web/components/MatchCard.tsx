@@ -47,7 +47,7 @@ export function MatchCard({ match, dense = false }: { match: MatchSummary; dense
           })()}
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-0.5 text-right">
+        <div className="flex shrink-0 flex-col items-end justify-between gap-0.5 self-stretch py-0.5 text-right">
           {isLive ? (
             <LiveDot />
           ) : isSuspended ? (
@@ -55,9 +55,19 @@ export function MatchCard({ match, dense = false }: { match: MatchSummary; dense
           ) : !finished ? (
             // Finished matches show no status label — the score makes it obvious.
             <span className="text-xs tnum text-text-secondary">{formatTime(match.scheduled_at)}</span>
-          ) : null}
-          {round && (
+          ) : (
+            // Keep the column structurally balanced so the tour pill below
+            // sits vertically centered between the top + bottom rows.
+            <span aria-hidden />
+          )}
+          {/* Tour pill — visually centered between the top (status/time)
+              and bottom (round) lines. Decorative only; the surrounding
+              <Link> handles the click. */}
+          {match.tournament_tour && <TourPill tour={match.tournament_tour} />}
+          {round ? (
             <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">{round}</span>
+          ) : (
+            <span aria-hidden />
           )}
         </div>
       </div>
@@ -114,6 +124,23 @@ function PlayerRow({
         )}
       </span>
     </div>
+  );
+}
+
+/** Small ATP/WTA badge tucked between the two player rows.
+ * Color uses tour-conventional broadcasting tones — sky for ATP,
+ * violet for WTA — distinct without being gendered. */
+function TourPill({ tour }: { tour: string }) {
+  const isAtp = tour.toLowerCase() === "atp";
+  const cls = isAtp
+    ? "bg-sky-100 text-sky-800 border-sky-200"
+    : "bg-violet-100 text-violet-800 border-violet-200";
+  return (
+    <span
+      className={`inline-flex h-[14px] items-center rounded-full border px-1.5 text-[8px] font-bold uppercase tracking-wider ${cls}`}
+    >
+      {tour.toUpperCase()}
+    </span>
   );
 }
 
