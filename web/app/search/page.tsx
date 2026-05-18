@@ -2,11 +2,23 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { api, type SearchHit } from "@/lib/api";
 
+// Next 15: useSearchParams() forces the page out of static
+// prerendering, so it must live inside a Suspense boundary or the
+// production build fails. Suspense fallback is essentially invisible
+// since the inner component renders immediately.
 export default function SearchPage() {
+  return (
+    <Suspense fallback={null}>
+      <SearchPageInner />
+    </Suspense>
+  );
+}
+
+function SearchPageInner() {
   const params = useSearchParams();
   // ?h2h=<slug> turns this into a "pick the opponent" picker. The
   // first player is the URL slug; clicking a player here builds the
