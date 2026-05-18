@@ -58,7 +58,7 @@ export default async function H2HPage({ params }: { params: Promise<{ matchup: s
               <PlayerAvatar name={data.player1.full_name} imageUrl={data.player1.image_url} countryCode={data.player1.country_code} size="md" />
               <span className="line-clamp-1 text-sm font-semibold">{data.player1.full_name}</span>
             </Link>
-            <ChangeOpponentLink anchorSlug={data.player2.slug} />
+            <ChangeOpponentLink anchorSlug={data.player2.slug} tourFilter={data.player2.tour} />
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold tnum">
@@ -71,7 +71,7 @@ export default async function H2HPage({ params }: { params: Promise<{ matchup: s
               <PlayerAvatar name={data.player2.full_name} imageUrl={data.player2.image_url} countryCode={data.player2.country_code} size="md" />
               <span className="line-clamp-1 text-sm font-semibold">{data.player2.full_name}</span>
             </Link>
-            <ChangeOpponentLink anchorSlug={data.player1.slug} />
+            <ChangeOpponentLink anchorSlug={data.player1.slug} tourFilter={data.player1.tour} />
           </div>
         </div>
 
@@ -141,7 +141,7 @@ function PartialH2HShell({
       <div className="flex h-14 w-14 items-center justify-center rounded-full border border-dashed border-ink-700 text-2xl text-text-muted">
         ?
       </div>
-      <OpponentPicker anchorSlug={anchor.slug} />
+      <OpponentPicker anchorSlug={anchor.slug} tourFilter={anchor.tour} />
     </div>
   );
   return (

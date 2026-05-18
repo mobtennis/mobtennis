@@ -9,13 +9,21 @@ import { OpponentPicker } from "@/components/OpponentPicker";
  * a small autocomplete; pick a player → navigates to the new H2H URL.
  * Esc / click "Cancel" backs out.
  */
-export function ChangeOpponentLink({ anchorSlug }: { anchorSlug: string }) {
+export function ChangeOpponentLink({
+  anchorSlug,
+  tourFilter,
+}: {
+  anchorSlug: string;
+  /** Restrict opponent results to this tour (the anchor's). */
+  tourFilter?: string | null;
+}) {
   const [open, setOpen] = useState(false);
   if (open) {
     return (
       <div className="space-y-1">
         <OpponentPicker
           anchorSlug={anchorSlug}
+          tourFilter={tourFilter}
           compact
           onCancel={() => setOpen(false)}
         />

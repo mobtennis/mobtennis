@@ -19,6 +19,7 @@ import { api, type SearchHit } from "@/lib/api";
  */
 export function OpponentPicker({
   anchorSlug,
+  tourFilter,
   compact = false,
   autoFocus = true,
   onCancel,
@@ -26,6 +27,10 @@ export function OpponentPicker({
 }: {
   /** Slug we're picking the opponent FOR — becomes player 1 in the new URL. */
   anchorSlug: string;
+  /** Restrict results to one tour (the anchor's). ATP plays ATP, WTA
+   * plays WTA — showing the opposite tour leads to confusing zero-H2H
+   * results. Pass nothing to skip the filter. */
+  tourFilter?: string | null;
   /** Smaller variant for the "change opponent" link case. */
   compact?: boolean;
   autoFocus?: boolean;
@@ -50,16 +55,23 @@ export function OpponentPicker({
     }
     setLoading(true);
     const t = setTimeout(() => {
-      api<SearchHit[]>(`/api/search?q=${encodeURIComponent(q)}&limit=10`)
+      // Ask for a slightly larger page than we'll show — the tour
+      // filter trims results, so a 5-result-on-screen target needs
+      // headroom when only half the hits match the anchor's tour.
+      api<SearchHit[]>(`/api/search?q=${encodeURIComponent(q)}&limit=20`)
         .then((all) =>
-          // Players only, and never the anchor itself.
-          setHits(all.filter((h) => h.kind === "player" && h.slug !== anchorSlug)),
+          setHits(
+            all
+              .filter((h) => h.kind === "player" && h.slug !== anchorSlug)
+              .filter((h) => !tourFilter || h.tour === tourFilter)
+              .slice(0, 10),
+          ),
         )
         .catch(() => setHits([]))
         .finally(() => setLoading(false));
     }, 180);
     return () => clearTimeout(t);
-  }, [q, anchorSlug]);
+  }, [q, anchorSlug, tourFilter]);
 
   return (
     <div className={compact ? "w-full" : "flex w-full flex-col items-center gap-2"}>
