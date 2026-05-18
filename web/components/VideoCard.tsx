@@ -59,7 +59,14 @@ export function VideoCard({ video }: { video: VideoItemSummary }) {
   });
 
   return (
-    <article className="overflow-hidden rounded-md border border-ink-700 bg-ink-900 shadow-card">
+    // mx-auto + max-w-[70%] shrinks both portrait and landscape cards
+    // within their masonry column. YouTube's hqdefault thumbnails are
+    // 480x360 — at full-column width (~360 px on mobile) they upscale
+    // and look grainy; bringing the card to ~70% of column width
+    // brings the display size closer to the source resolution. Once
+    // playback is moved to a modal we can drop the cap, but until then
+    // a slightly smaller card is the cleanest fix.
+    <article className="mx-auto w-full max-w-[70%] overflow-hidden rounded-md border border-ink-700 bg-ink-900 shadow-card">
       <div
         className={`relative w-full bg-ink-950 ${portrait ? "aspect-[9/16]" : "aspect-video"}`}
       >

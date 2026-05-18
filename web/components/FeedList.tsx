@@ -5,26 +5,20 @@ import { formatRelative } from "@/lib/format";
 import { VideoCard } from "@/components/VideoCard";
 
 /**
- * Unified news + video feed. Loosely-chronological masonry:
+ * Unified news + video feed. Loosely-chronological masonry: every
+ * item flows into a 2-column grid; each card lands in the currently-
+ * shorter column. Order within a column stays time-sorted top→bottom;
+ * across columns it's "newest-fills-the-shorter-side," which reads
+ * close to chronological without leaving voids.
  *
- *   - "narrow" items (news cards + portrait/Shorts videos) flow into
- *     a 2-column grid. We DON'T round-robin — every item lands in the
- *     currently-shorter column, which packs cards tightly and absorbs
- *     the big gaps you get when a 9:16 portrait sits next to a 1-line
- *     headline. Order within a column stays time-sorted top→bottom;
- *     across columns it's "newest-fills-the-shorter-side," which
- *     reads close to chronological without leaving voids.
+ * Landscape videos used to break out as full-width banners so they
+ * didn't look puny next to portrait cards in the same column. We
+ * dropped that — both card types now flow inline. Video cards have
+ * their own width cap (~70 % of column) so a YouTube thumbnail
+ * doesn't get upscaled into grain.
  *
- *   - landscape videos break out as full-width banners between chunks.
- *     16:9 at 1-column width looks puny next to a 9:16 portrait in the
- *     same column. Spanning the container makes the landscape's pixel
- *     area at least match a portrait's, and visually punctuates the
- *     chronological flow.
- *
- * Heights are estimated from card type + text length — no DOM measure
- * needed, so SSR + first paint are stable and there's no layout
- * thrash. The estimator's units are abstract; only relative heights
- * matter to the packing decision.
+ * Heights are estimated from card type + text length — no DOM
+ * measure needed, so SSR + first paint are stable.
  */
 const COLS = 2;
 
@@ -32,10 +26,10 @@ const COLS = 2;
  * relative ordering matters for shortest-column packing. */
 function estimateHeight(item: FeedItem): number {
   if (item.kind === "video") {
-    const v = item.item;
-    // Portrait 9:16 → tall; landscape shouldn't reach here (it's a wide
-    // breakout above) but cover the case anyway.
-    const videoH = v.is_portrait ? 178 : 56;
+    // Card body has a 0.7× width cap so the video frame height is
+    // also 70 % of what it would be at column width. Portrait =
+    // tall 9:16; landscape = squat 16:9. Values are relative.
+    const videoH = item.item.is_portrait ? 130 : 40;
     return videoH + 50; // title + meta chrome
   }
   // News card. Approx 30 chars per line at narrow column width.
@@ -54,45 +48,7 @@ export function FeedList({ items }: { items: FeedItem[] }) {
       </div>
     );
   }
-
-  type Group =
-    | { kind: "chunk"; items: FeedItem[] }
-    | { kind: "wide"; video: Extract<FeedItem, { kind: "video" }> };
-  const groups: Group[] = [];
-  let buf: FeedItem[] = [];
-  for (const entry of items) {
-    const isLandscape = entry.kind === "video" && !entry.item.is_portrait;
-    if (isLandscape) {
-      if (buf.length > 0) {
-        groups.push({ kind: "chunk", items: buf });
-        buf = [];
-      }
-      groups.push({ kind: "wide", video: entry });
-    } else {
-      buf.push(entry);
-    }
-  }
-  if (buf.length > 0) groups.push({ kind: "chunk", items: buf });
-
-  return (
-    <div className="flex flex-col gap-3">
-      {groups.map((g) => {
-        if (g.kind === "wide") {
-          return <VideoCard key={`wide-${g.video.item.id}`} video={g.video.item} />;
-        }
-        // Key each chunk by the id of its first item so load-more
-        // doesn't cause React to unmount + remount existing chunks
-        // (which would kill any playing video and lose scroll
-        // anchoring). The first item's id is stable as long as no
-        // newer item is prepended — and load-more only appends.
-        const anchor = g.items[0];
-        const key = anchor
-          ? `chunk-${anchor.kind}-${anchor.item.id}`
-          : "chunk-empty";
-        return <Chunk key={key} items={g.items} />;
-      })}
-    </div>
-  );
+  return <Chunk items={items} />;
 }
 
 function Chunk({ items }: { items: FeedItem[] }) {
