@@ -136,8 +136,13 @@ export default async function PlayerPage({ params }: { params: Promise<{ slug: s
       <ExternalLinks name={player.full_name} tour={player.tour} />
 
       <div className="text-center">
+        {/* Sends to search with the first player pre-selected. Previously
+            linked to `/h2h/${slug}-vs-` which crawlers latched onto and
+            hammered, helping take the box down with an empty-slug query
+            pileup. Routing through search makes the user pick a real
+            second player before the H2H endpoint is even hit. */}
         <Link
-          href={`/h2h/${slug}-vs-`}
+          href={`/search?h2h=${slug}`}
           className="inline-block rounded-full border border-ink-700 bg-ink-900 px-4 py-2 text-xs font-medium hover:border-ink-600"
         >
           Compare head-to-head →
