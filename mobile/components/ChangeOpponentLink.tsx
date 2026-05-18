@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
-
-import { OpponentPicker } from "@/components/OpponentPicker";
+import { Link } from "expo-router";
+import { Pressable, Text } from "react-native";
 
 /**
- * "Change opponent" toggle for the mobile H2H card. Tap → reveal an
- * inline picker; tapping a player navigates to the new H2H URL.
+ * "Change opponent" link under each player on the H2H card. Tap to
+ * open the dedicated pick screen with this anchor pre-selected; the
+ * picker tour-filters by `tourFilter` so an ATP anchor only matches
+ * ATP opponents.
  */
 export function ChangeOpponentLink({
   anchorSlug,
@@ -14,24 +14,16 @@ export function ChangeOpponentLink({
   anchorSlug: string;
   tourFilter?: string | null;
 }) {
-  const [open, setOpen] = useState(false);
-  if (open) {
-    return (
-      <View className="w-full gap-1">
-        <OpponentPicker anchorSlug={anchorSlug} tourFilter={tourFilter} />
-        <Pressable onPress={() => setOpen(false)}>
-          <Text className="text-center text-[10px] text-text-muted underline">
-            cancel
-          </Text>
-        </Pressable>
-      </View>
-    );
-  }
+  const href = tourFilter
+    ? `/h2h/pick?anchor=${anchorSlug}&tour=${tourFilter}`
+    : `/h2h/pick?anchor=${anchorSlug}`;
   return (
-    <Pressable onPress={() => setOpen(true)}>
-      <Text className="text-[10px] text-text-muted underline">
-        change opponent
-      </Text>
-    </Pressable>
+    <Link href={href as any} asChild>
+      <Pressable>
+        <Text className="text-[10px] text-text-muted underline">
+          change opponent
+        </Text>
+      </Pressable>
+    </Link>
   );
 }

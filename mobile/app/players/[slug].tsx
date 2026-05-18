@@ -72,9 +72,7 @@ export default function PlayerScreen() {
 
       <View className="flex-row items-center justify-between gap-3">
         <FollowButton kind="player" slug={player.slug} />
-        {/* Mirror of web: route via search so the user picks the
-            opponent rather than navigating to a half-formed H2H URL. */}
-        <Link href={`/search?h2h=${player.slug}` as any} asChild>
+        <Link href={`/h2h/pick?anchor=${player.slug}&tour=${player.tour}` as any} asChild>
           <Pressable className="rounded-full border border-ink-700 bg-ink-900 px-3 py-1.5">
             <Text className="text-xs font-semibold text-text-secondary">Compare H2H →</Text>
           </Pressable>

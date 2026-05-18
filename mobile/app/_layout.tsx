@@ -49,11 +49,16 @@ export default function RootLayout() {
             contentStyle: { backgroundColor: "#FAF7F0" },
           }}
         >
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          {/* title="Home" controls what the iOS back-arrow says when
+              you navigate AWAY from the tab group. Without it, the back
+              button reads "tabs" (the route name) — the previous
+              screen's title is what iOS falls back to. */}
+          <Stack.Screen name="(tabs)" options={{ headerShown: false, title: "Home" }} />
           <Stack.Screen name="players/[slug]" options={{ title: "Player" }} />
           <Stack.Screen name="tournaments/[tour]/[slug]" options={{ title: "Tournament" }} />
           <Stack.Screen name="matches/[id]" options={{ title: "Match" }} />
           <Stack.Screen name="h2h/[matchup]" options={{ title: "Head-to-head" }} />
+          <Stack.Screen name="h2h/pick" options={{ title: "Pick opponent" }} />
           <Stack.Screen name="following" options={{ title: "Following" }} />
           <Stack.Screen name="search" options={{ title: "Search" }} />
           <Stack.Screen name="credits" options={{ title: "Credits" }} />
