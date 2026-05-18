@@ -13,7 +13,21 @@ EnvironmentFile=/opt/tennismob/backend/.env
 # --workers 1 is intentional. APScheduler holds in-process state (jobs,
 # adaptive cadence, the live-poll task) — multiple workers would each spawn
 # the scheduler and duplicate every poll, blowing the api-tennis quota.
-ExecStart=/opt/tennismob/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+# --limit-concurrency 80 stops requests piling up behind a stuck handler.
+#   The deadlock that took us down last night: malformed H2H URLs
+#   (slug2="") triggered a Player.slug.contains("") match, an unrelated
+#   player got loaded, an N+1 surface lookup ran across all their
+#   matches. That handler is `def` not `async def` so each call blocked
+#   the event loop. Crawler hammered ~10 variations, requests stacked
+#   up to 540 in-flight, RSS hit 1.6 G, scheduler missed jobs by 40
+#   min, box wedged. With this limit the 81st arrival gets 503 instead
+#   of compounding the problem.
+# --timeout-keep-alive 5 (down from default 5 → unchanged but documented)
+# --backlog 128 caps the OS-level accept queue too so we don't queue
+#   thousands of pending connections behind a stuck event loop.
+ExecStart=/opt/tennismob/backend/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 --workers 1 \
+    --limit-concurrency 80 --backlog 128 --timeout-keep-alive 5
 
 Restart=on-failure
 RestartSec=5
