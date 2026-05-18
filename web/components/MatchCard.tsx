@@ -47,7 +47,7 @@ export function MatchCard({ match, dense = false }: { match: MatchSummary; dense
           })()}
         </div>
 
-        <div className="flex shrink-0 flex-col items-end justify-between gap-0.5 self-stretch py-0.5 text-right">
+        <div className="flex shrink-0 flex-col items-end gap-0.5 text-right">
           {isLive ? (
             <LiveDot />
           ) : isSuspended ? (
@@ -55,19 +55,13 @@ export function MatchCard({ match, dense = false }: { match: MatchSummary; dense
           ) : !finished ? (
             // Finished matches show no status label — the score makes it obvious.
             <span className="text-xs tnum text-text-secondary">{formatTime(match.scheduled_at)}</span>
-          ) : (
-            // Keep the column structurally balanced so the tour pill below
-            // sits vertically centered between the top + bottom rows.
-            <span aria-hidden />
-          )}
-          {/* Tour pill — visually centered between the top (status/time)
-              and bottom (round) lines. Decorative only; the surrounding
-              <Link> handles the click. */}
+          ) : null}
+          {/* Tour pill — sits between status and round labels in the
+              meta column. Decorative only; the surrounding <Link>
+              handles the click. */}
           {match.tournament_tour && <TourPill tour={match.tournament_tour} />}
-          {round ? (
+          {round && (
             <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">{round}</span>
-          ) : (
-            <span aria-hidden />
           )}
         </div>
       </div>
