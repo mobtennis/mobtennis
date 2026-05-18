@@ -447,10 +447,18 @@ def tournament_champions(
     for tid, tyear in instances:
         if len(out) >= needed:
             break
-        # Two-column tuples instead of full Match rows.
+        # Two-column tuples instead of full Match rows. Singles only —
+        # the doubles final shares "Final" depth with the singles final
+        # and (without this filter) max() can return the doubles winner,
+        # which is how "Bolelli/Vavassori" briefly showed up as the 2026
+        # Rome champion.
         rows = session.exec(
             select(Match.round, Match.winner_id)
-            .where(Match.tournament_id == tid, Match.status == MatchStatus.FINISHED)
+            .where(
+                Match.tournament_id == tid,
+                Match.status == MatchStatus.FINISHED,
+                Match.is_doubles == False,  # noqa: E712 — SQLAlchemy expr
+            )
         ).all()
         if not rows:
             continue
@@ -496,12 +504,18 @@ def tournament_overview(tour: Tour, slug: str, session: Session = Depends(get_se
     year_by_tid = {t.id: t.year for t in instances}
 
     # Lean match rows — six columns, not the full 20+ field Match ORM.
+    # Singles only: every "last edition" / "titles" / "appearances"
+    # computation downstream assumes singles. Doubles "Final" rows would
+    # otherwise crash into the singles Final at the same round_depth.
     matches = session.exec(
         select(
             Match.tournament_id, Match.round,
             Match.player1_id, Match.player2_id,
             Match.winner_id, Match.score,
-        ).where(Match.tournament_id.in_(tids))
+        ).where(
+            Match.tournament_id.in_(tids),
+            Match.is_doubles == False,  # noqa: E712 — SQLAlchemy expr
+        )
     ).all()
 
     # Pre-group so we don't re-scan all matches for each instance.
