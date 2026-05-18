@@ -619,14 +619,20 @@ def start_scheduler() -> None:
         id="sync_videos_boot",
     )
 
-    # Rankings — daily at the configured hour, plus once at boot
+    # Rankings — twice daily so we catch the Monday publication whether
+    # upstream rolls over before or after 04:00 UTC. Tournament results
+    # finalise Sunday evening; ATP/WTA publish Monday morning local; our
+    # provider lags a few hours. Two shots a day means a single missed
+    # run (last week's box deadlock at 04:00 UTC took rankings down for
+    # a full week) doesn't bench us until the following Monday.
     from apscheduler.triggers.cron import CronTrigger
     _scheduler.add_job(
         _sync_rankings_job,
-        CronTrigger(hour=settings.rankings_sync_hour, minute=0),
+        CronTrigger(hour=f"{settings.rankings_sync_hour},16", minute=0),
         id="sync_rankings",
         max_instances=1,
         coalesce=True,
+        misfire_grace_time=3600,  # If we miss, run it within an hour anyway.
     )
     # Boot trigger removed — daily cadence is fine; a deploy doesn't change
     # rankings, and stacking 6+ enrichment jobs in the first 90 seconds was
