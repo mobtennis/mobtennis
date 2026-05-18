@@ -1,35 +1,50 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import type { FeedItem, NewsItemSummary } from "@/lib/api";
 import { formatRelative } from "@/lib/format";
 import { VideoCard } from "@/components/VideoCard";
 
 /**
  * Unified news + video feed. Loosely-chronological masonry: every
- * item flows into a 2-column grid; each card lands in the currently-
+ * item flows into a column grid; each card lands in the currently-
  * shorter column. Order within a column stays time-sorted top→bottom;
  * across columns it's "newest-fills-the-shorter-side," which reads
  * close to chronological without leaving voids.
  *
- * Landscape videos used to break out as full-width banners so they
- * didn't look puny next to portrait cards in the same column. We
- * dropped that — both card types now flow inline. Video cards have
- * their own width cap (~70 % of column) so a YouTube thumbnail
- * doesn't get upscaled into grain.
+ * 2 cols on mobile / 3 cols on ≥640 px. Video and news cards are
+ * the same width; column width itself controls the displayed size
+ * of YouTube thumbnails, and at 3 cols on a 768 px container the
+ * column is ~240 px wide which is close to the source thumbnail
+ * resolution — no more upscale-grain.
  *
  * Heights are estimated from card type + text length — no DOM
  * measure needed, so SSR + first paint are stable.
  */
-const COLS = 2;
+function useColumnCount(): number {
+  // SSR / first paint = 2 cols (mobile default); the effect
+  // upgrades to 3 on wider screens after hydration. Match the
+  // Tailwind sm breakpoint (640 px) so the JS-driven count agrees
+  // with whatever utility classes we use elsewhere.
+  const [cols, setCols] = useState(2);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 640px)");
+    const sync = () => setCols(mq.matches ? 3 : 2);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return cols;
+}
 
 /** Rough relative height of a card. Units are arbitrary — only the
  * relative ordering matters for shortest-column packing. */
 function estimateHeight(item: FeedItem): number {
   if (item.kind === "video") {
-    // Card body has a 0.7× width cap so the video frame height is
-    // also 70 % of what it would be at column width. Portrait =
-    // tall 9:16; landscape = squat 16:9. Values are relative.
-    const videoH = item.item.is_portrait ? 130 : 40;
+    // Video frame height at column width: portrait 9:16 is tall,
+    // landscape 16:9 is squat. Numbers are relative.
+    const videoH = item.item.is_portrait ? 200 : 60;
     return videoH + 50; // title + meta chrome
   }
   // News card. Approx 30 chars per line at narrow column width.
@@ -41,6 +56,7 @@ function estimateHeight(item: FeedItem): number {
 }
 
 export function FeedList({ items }: { items: FeedItem[] }) {
+  const colCount = useColumnCount();
   if (items.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-ink-700 px-4 py-8 text-center text-text-muted">
@@ -48,27 +64,29 @@ export function FeedList({ items }: { items: FeedItem[] }) {
       </div>
     );
   }
-  return <Chunk items={items} />;
-}
 
-function Chunk({ items }: { items: FeedItem[] }) {
-  // Pack into the shorter column, in order. Ties go left so the layout
-  // stays stable across re-renders.
-  const cols: { items: FeedItem[]; height: number }[] = Array.from(
-    { length: COLS },
+  // Pack into the shorter column, in order. Ties go left so the
+  // layout stays stable across re-renders.
+  const buckets: { items: FeedItem[]; height: number }[] = Array.from(
+    { length: colCount },
     () => ({ items: [], height: 0 }),
   );
   for (const entry of items) {
     let target = 0;
-    for (let i = 1; i < COLS; i++) {
-      if (cols[i].height < cols[target].height) target = i;
+    for (let i = 1; i < colCount; i++) {
+      if (buckets[i].height < buckets[target].height) target = i;
     }
-    cols[target].items.push(entry);
-    cols[target].height += estimateHeight(entry);
+    buckets[target].items.push(entry);
+    buckets[target].height += estimateHeight(entry);
   }
+
+  // Tailwind needs the column-count class names to be literal
+  // strings in the source so the JIT picks them up.
+  const gridClass = colCount === 3 ? "grid grid-cols-3 gap-3" : "grid grid-cols-2 gap-3";
+
   return (
-    <div className="grid grid-cols-2 gap-3">
-      {cols.map((col, idx) => (
+    <div className={gridClass}>
+      {buckets.map((col, idx) => (
         <div key={idx} className="flex flex-col gap-3">
           {col.items.map((entry) =>
             entry.kind === "video" ? (
