@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { api, type H2HResponse } from "@/lib/api";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
@@ -15,6 +15,16 @@ export async function generateMetadata({ params }: { params: Promise<{ matchup: 
 export default async function H2HPage({ params }: { params: Promise<{ matchup: string }> }) {
   const { matchup } = await params;
   if (!matchup.includes("-vs-")) notFound();
+
+  // Half-formed URL (`alcaraz-vs-` or `-vs-sinner`): send the user
+  // to the opponent picker instead of dead-ending on a 404. Crawlers
+  // discovered this URL pattern from old "Compare H2H" buttons; we
+  // want any straggling links to land somewhere useful.
+  const [s1, s2] = matchup.split("-vs-", 2);
+  if (!s1 || !s2) {
+    const anchor = s1 || s2;
+    redirect(anchor ? `/search?h2h=${anchor}` : "/search");
+  }
 
   const data = await api<H2HResponse>(`/api/h2h/${matchup}`).catch(() => null);
   if (!data) notFound();
