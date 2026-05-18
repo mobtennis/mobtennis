@@ -49,10 +49,17 @@ export default async function H2HPage({ params }: { params: Promise<{ matchup: s
       <header className="rounded-lg border border-ink-700 bg-ink-900 p-4 shadow-card">
         <h1 className="text-center text-base font-semibold uppercase tracking-wider text-text-muted">Head-to-Head</h1>
         <div className="mt-3 grid grid-cols-3 items-start gap-3">
-          <Link href={`/players/${data.player1.slug}`} className="flex flex-col items-center gap-2">
-            <PlayerAvatar name={data.player1.full_name} imageUrl={data.player1.image_url} countryCode={data.player1.country_code} size="md" />
-            <span className="line-clamp-1 text-sm font-semibold">{data.player1.full_name}</span>
-          </Link>
+          {/* Each side has a "change opponent" link. The anchorSlug
+              passed to it is the OTHER player — clicking under
+              player 1 swaps player 1 (so player 2 remains the
+              anchor), and vice versa. */}
+          <div className="flex flex-col items-center gap-2">
+            <Link href={`/players/${data.player1.slug}`} className="flex flex-col items-center gap-2">
+              <PlayerAvatar name={data.player1.full_name} imageUrl={data.player1.image_url} countryCode={data.player1.country_code} size="md" />
+              <span className="line-clamp-1 text-sm font-semibold">{data.player1.full_name}</span>
+            </Link>
+            <ChangeOpponentLink anchorSlug={data.player2.slug} />
+          </div>
           <div className="text-center">
             <div className="text-3xl font-bold tnum">
               {data.p1_wins} <span className="text-text-muted">–</span> {data.p2_wins}
