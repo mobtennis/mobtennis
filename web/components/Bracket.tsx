@@ -107,9 +107,12 @@ function buildColumns(
   drawSize: number | null,
   padPlaceholders: boolean,
 ): Column[] {
-  // Singles main-draw only.
+  // Singles main-draw only. The is_doubles filter is what actually keeps
+  // doubles out — the comment used to lie about this and we ended up
+  // with Krajicek/Mektic showing in QF row 3 of the singles bracket.
   const byDepth = new Map<number, MatchSummary[]>();
   for (const m of matches) {
+    if (m.is_doubles) continue;
     const d = roundDepth(m.round);
     if (d < MAIN_DRAW_MIN_DEPTH) continue;
     if (!byDepth.has(d)) byDepth.set(d, []);
