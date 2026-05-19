@@ -14,9 +14,7 @@ export async function generateMetadata({
 }) {
   const { week } = await params;
   const digest = await api<DigestDetail>(`/api/digests/${week}`, {
-    // Temporarily 600 while the 2026-05-11 regen propagates after the
-    // Rome data fix + milestone note. Will revert to 86400 once flushed.
-    revalidate: 600,
+    revalidate: 86400,
   }).catch(() => null);
   if (!digest) return { title: "Weekly digest" };
   return {
@@ -37,8 +35,9 @@ export default async function DigestWeekPage({
   if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) notFound();
 
   const [digest, archive] = await Promise.all([
-    // Temporarily 600 — see generateMetadata above.
-    api<DigestDetail>(`/api/digests/${week}`, { revalidate: 600 }).catch(() => null),
+    // 24h cache. During iteration (re-backfill or data fix), drop this
+    // to 600 and ping the page 2-3 times to flush ISR via SWR.
+    api<DigestDetail>(`/api/digests/${week}`, { revalidate: 86400 }).catch(() => null),
     // 100 is enough for any reasonable archive view + neighbour lookup.
     api<DigestSummary[]>(`/api/digests?limit=100`, { revalidate: 600 }).catch(
       () => [] as DigestSummary[],
