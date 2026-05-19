@@ -56,6 +56,9 @@ export default function DigestWeekScreen() {
         <Text className="mt-3 text-xl font-bold text-text-primary">
           {digest.headline}
         </Text>
+        <Text className="mt-3 text-xs text-text-muted">
+          By the Mobtennis team
+        </Text>
       </View>
 
       <View className="rounded-lg border border-ink-700 bg-ink-900 p-5">

@@ -19,6 +19,20 @@ export function Footer() {
         </Link>
         <span aria-hidden>·</span>
         <Link
+          href="/standards"
+          className="underline decoration-dotted underline-offset-2 hover:text-text-secondary"
+        >
+          Standards
+        </Link>
+        <span aria-hidden>·</span>
+        <Link
+          href="/contact"
+          className="underline decoration-dotted underline-offset-2 hover:text-text-secondary"
+        >
+          Contact
+        </Link>
+        <span aria-hidden>·</span>
+        <Link
           href="/privacy"
           className="underline decoration-dotted underline-offset-2 hover:text-text-secondary"
         >

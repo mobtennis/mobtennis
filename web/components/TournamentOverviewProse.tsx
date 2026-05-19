@@ -61,6 +61,39 @@ function sentences(t: TournamentDetail, o: TournamentOverview): string[] {
     }
   }
 
+  // History sentence — first held + total editions. Anchors the page in
+  // time so a reader knows whether this is a 70-year-old institution or
+  // a recent rebrand.
+  if (o.stats.first_held && o.stats.total_editions && o.stats.total_editions > 1) {
+    lines.push(
+      `First held in ${o.stats.first_held}, the tournament has been contested ${o.stats.total_editions} times.`,
+    );
+  } else if (o.stats.first_held) {
+    lines.push(`The tournament dates back to ${o.stats.first_held}.`);
+  }
+
+  // City / country flavour when we have it on the brand-page payload.
+  if (t.city && t.country_code) {
+    lines.push(
+      `The event is staged in ${t.city}, with the draw running through the week leading up to its Sunday final.`,
+    );
+  }
+
+  // Draw size — gives an idea of scale (a 128-draw Slam vs. a 32-draw
+  // 250 is a very different commitment for the players who attend).
+  if (o.stats.draw_size && o.stats.draw_size >= 32) {
+    lines.push(
+      `The singles main draw carries ${o.stats.draw_size} players.`,
+    );
+  }
+
+  // Prize money — only at a level that's noteworthy.
+  if (o.stats.prize_money && o.stats.prize_money >= 1_000_000) {
+    lines.push(
+      `Recent editions have carried a prize pool of around ${formatPrizeMoney(o.stats.prize_money)}.`,
+    );
+  }
+
   // Most-titles record. The detail string ("3 titles") already carries
   // the count; we re-mention the player by name in prose rather than
   // expecting the reader to parse the card grid.
@@ -69,18 +102,6 @@ function sentences(t: TournamentDetail, o: TournamentOverview): string[] {
     lines.push(
       `${mostTitles.value} holds the record for most titles (${mostTitles.detail.toLowerCase()}).`,
     );
-  }
-
-  // Defending champion / last edition.
-  if (o.last_edition) {
-    const le = o.last_edition;
-    if (le.runner_up) {
-      lines.push(
-        `The ${le.year} edition was won by ${le.champion.full_name}, defeating ${le.runner_up.full_name}${le.final_score ? ` ${le.final_score}` : ""}.`,
-      );
-    } else {
-      lines.push(`The ${le.year} edition was won by ${le.champion.full_name}.`);
-    }
   }
 
   // Most appearances — a different kind of record from titles, gives
@@ -92,7 +113,43 @@ function sentences(t: TournamentDetail, o: TournamentOverview): string[] {
     );
   }
 
+  // Any other notable record we got back (youngest champion, longest
+  // match, etc.) — keep one beyond titles/appearances to give the
+  // paragraph a finishing kicker without listing every record on file.
+  const otherRecord = o.records.find(
+    (r) =>
+      r.title !== "Most titles" &&
+      r.title !== "Most appearances" &&
+      r.value &&
+      r.detail,
+  );
+  if (otherRecord) {
+    lines.push(
+      `${otherRecord.title} on record: ${otherRecord.value} (${(otherRecord.detail || "").toLowerCase()}).`,
+    );
+  }
+
+  // Defending champion / last edition — closer so the reader knows where
+  // the title currently lives.
+  if (o.last_edition) {
+    const le = o.last_edition;
+    if (le.runner_up) {
+      lines.push(
+        `The ${le.year} edition was won by ${le.champion.full_name}, defeating ${le.runner_up.full_name}${le.final_score ? ` ${le.final_score}` : ""}.`,
+      );
+    } else {
+      lines.push(`The ${le.year} edition was won by ${le.champion.full_name}.`);
+    }
+  }
+
   return lines;
+}
+
+function formatPrizeMoney(amount: number): string {
+  if (amount >= 1_000_000) {
+    return `$${(amount / 1_000_000).toFixed(amount % 1_000_000 === 0 ? 0 : 1)}M`;
+  }
+  return `$${Math.round(amount).toLocaleString("en-US")}`;
 }
 
 function formatCategory(category: string | null): string {

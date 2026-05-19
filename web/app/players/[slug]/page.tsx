@@ -28,7 +28,20 @@ import { flagEmoji } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  return { title: slug.replace(/-/g, " ") };
+  const player = await api<PlayerDetail>(`/api/players/${slug}`, {
+    revalidate: 3600,
+  }).catch(() => null);
+  if (!player) return { title: slug.replace(/-/g, " ") };
+
+  // Thin-page noindex: nobodys with neither a current nor career-high
+  // ranking are usually wildcard / junior / qualifier rows whose page
+  // has a name and not much else. Indexing them dilutes the site's
+  // editorial signal without giving readers anything useful.
+  const isThin = player.current_rank === null && player.career_high_rank === null;
+  return {
+    title: player.full_name,
+    ...(isThin ? { robots: { index: false, follow: true } } : {}),
+  };
 }
 
 export default async function PlayerPage({ params }: { params: Promise<{ slug: string }> }) {

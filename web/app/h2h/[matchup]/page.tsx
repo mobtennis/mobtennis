@@ -12,7 +12,23 @@ import { surfaceColor } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ matchup: string }> }) {
   const { matchup } = await params;
-  return { title: matchup.replace("-vs-", " vs ").replace(/-/g, " ") };
+  const title = matchup.replace("-vs-", " vs ").replace(/-/g, " ");
+
+  // Noindex two thin shapes: half-formed URLs ("alcaraz-vs-" with one
+  // slug missing — page falls back to an opponent picker) and rivalries
+  // with zero meetings on record (nothing editorial to anchor on).
+  if (!matchup.includes("-vs-")) return { title };
+  const [s1, s2] = matchup.split("-vs-", 2);
+  if (!s1 || !s2) return { title, robots: { index: false, follow: true } };
+
+  const data = await api<H2HResponse>(`/api/h2h/${matchup}`, { revalidate: 3600 }).catch(
+    () => null,
+  );
+  const totalMeetings = data?.summary?.total_meetings ?? data?.matches.length ?? 0;
+  if (totalMeetings === 0) {
+    return { title, robots: { index: false, follow: true } };
+  }
+  return { title };
 }
 
 export default async function H2HPage({ params }: { params: Promise<{ matchup: string }> }) {

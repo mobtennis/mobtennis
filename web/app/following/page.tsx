@@ -1,6 +1,10 @@
 import { GetTheAppCard } from "@/components/GetTheAppCard";
 
-export const metadata = { title: "Following" };
+export const metadata = {
+  title: "Following",
+  // Personalised, device-local state — nothing for a crawler to anchor on.
+  robots: { index: false, follow: true },
+};
 
 export default function FollowingPage() {
   return (

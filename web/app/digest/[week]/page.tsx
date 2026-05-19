@@ -61,6 +61,9 @@ export default async function DigestWeekPage({
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-text-primary">
           {digest.headline}
         </h1>
+        <div className="mt-3 text-xs text-text-muted">
+          By the Mobtennis team
+        </div>
       </header>
 
       <article className="rounded-lg border border-ink-700 bg-ink-900 p-5 shadow-card">
