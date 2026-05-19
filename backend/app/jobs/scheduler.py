@@ -26,6 +26,7 @@ from app.services.news_fanout import fan_out as fan_out_news
 from app.services.youtube import sync_videos
 from app.services.rankings_sync import upsert_rankings
 from app.services.sync import upsert_live_matches
+from app.services.editorial_digest import generate_digest, monday_of
 from app.services.wiki_brackets_job import scrape_pending_brackets
 from app.services.players_bio_enrich import enrich_pending as enrich_players_bios
 from app.services.players_socials_enrich import enrich_top_n as enrich_players_socials
@@ -566,6 +567,26 @@ def _sweep_stuck_matches_job() -> None:
         log.exception("stuck-match sweep failed")
 
 
+async def _generate_weekly_digest_job() -> None:
+    """Generates the editorial digest for the week that just ended.
+
+    Runs Monday 06:00 UTC — by then Sunday's finals have settled in
+    every timezone and the api-tennis backfill has reconciled. The
+    service is idempotent on (week_start), so a re-run from the cron
+    after a manual backfill is a no-op.
+    """
+    try:
+        last_monday = monday_of(date.today()) - timedelta(days=7)
+        with Session(engine) as session:
+            row = generate_digest(session, last_monday)
+            if row:
+                log.info("editorial digest written for week %s", last_monday)
+            else:
+                log.info("editorial digest skipped for week %s", last_monday)
+    except Exception:
+        log.exception("editorial digest job failed")
+
+
 # ---- Lifecycle --------------------------------------------------------------
 
 
@@ -739,6 +760,21 @@ def start_scheduler() -> None:
         coalesce=True,
     )
     # Boot trigger removed — daily cadence is plenty.
+
+    # Weekly editorial digest. Monday 06:00 UTC — late enough that
+    # Sunday's finals have settled in every timezone and the api-tennis
+    # backfill has reconciled, early enough that the page reads
+    # "this morning" to European readers. misfire_grace_time of 6h means
+    # even if the worker is restarting at the cron mark, we still catch
+    # the run.
+    _scheduler.add_job(
+        _generate_weekly_digest_job,
+        CronTrigger(day_of_week="mon", hour=6, minute=0),
+        id="generate_weekly_digest",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=6 * 3600,
+    )
 
     if settings.healthchecks_ping_url:
         _scheduler.add_job(

@@ -1,3 +1,4 @@
+from app.models.digest import EditorialDigest
 from app.models.follow import Follow
 from app.models.match import Match, MatchStatus, Surface
 from app.models.match_follow import MatchFollow, MatchFollowGranularity
@@ -9,6 +10,7 @@ from app.models.tournament import Tournament, TournamentCategory
 from app.models.video import VideoItem
 
 __all__ = [
+    "EditorialDigest",
     "Follow",
     "Match",
     "MatchFollow",

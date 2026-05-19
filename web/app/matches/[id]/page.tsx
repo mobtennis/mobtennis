@@ -111,6 +111,20 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
         )}
       </header>
 
+      {match.blurb && match.blurb.paragraph && (
+        <section
+          className="rounded-lg border border-ink-700 bg-ink-900 p-4 shadow-card"
+          aria-label={match.blurb.kind === "recap" ? "Match recap" : "Match preview"}
+        >
+          <h2 className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+            {match.blurb.kind === "recap" ? "Recap" : "Preview"}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-text-secondary">
+            {match.blurb.paragraph}
+          </p>
+        </section>
+      )}
+
       {match.stats && (
         <MatchStatsPanel
           stats={match.stats}

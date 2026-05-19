@@ -14,6 +14,10 @@ dependencies = [
   "feedparser>=6.0",
   "python-slugify>=8.0",
   "tenacity>=9.0",
+  # Editorial digest generator. Only used by app/services/editorial_digest.py
+  # and the weekly cron job; if ANTHROPIC_API_KEY isn't set the generator
+  # is a no-op, so the dep is dormant on deployments that don't run it.
+  "anthropic>=0.45",
 ]
 
 [dependency-groups]

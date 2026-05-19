@@ -7,6 +7,7 @@ import {
   type VideoItemSummary,
 } from "@/lib/api";
 import { AdSlot } from "@/components/AdSlot";
+import { DigestHomeCard } from "@/components/DigestHomeCard";
 import { FeedList } from "@/components/FeedList";
 import { HappeningNow } from "@/components/HappeningNow";
 import { LiveStreamRefresh } from "@/components/LiveStreamRefresh";
@@ -58,6 +59,10 @@ export default async function HomePage() {
         upcomingFeatured={upcomingFeatured}
         tIndex={tIndex}
       />
+
+      {/* Weekly editorial digest — server-renders nothing if no digest
+          exists yet, so this is safe to leave wired on fresh deploys. */}
+      <DigestHomeCard />
 
       <AdSlot slot="home-mid" />
 

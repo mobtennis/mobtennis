@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
+    digest,
     h2h,
     follows,
     match_follows,
@@ -237,3 +238,4 @@ app.include_router(push.router)
 app.include_router(search.router)
 app.include_router(stream.router)
 app.include_router(videos.router)
+app.include_router(digest.router)

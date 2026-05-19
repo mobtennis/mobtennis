@@ -34,6 +34,7 @@ export const EVENTS = {
   searchPerformed: "search_performed",
   newsClicked: "news_clicked",
   pushPermission: "push_permission",
+  digestOpened: "digest_opened",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];

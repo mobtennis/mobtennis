@@ -7,8 +7,10 @@ from sqlmodel import Session, select
 from app.api._helpers import match_to_summary
 from app.db.session import get_session
 from app.models.match import Match, MatchStatus
+from app.models.player import Player
 from app.models.tournament import Tournament, TournamentCategory
-from app.schemas.match import MatchDetail, MatchStats, MatchSummary
+from app.schemas.match import MatchBlurb, MatchDetail, MatchStats, MatchSummary
+from app.services.match_blurb import build_blurb, compute_h2h_context
 
 router = APIRouter(prefix="/api/matches", tags=["matches"])
 
@@ -117,9 +119,25 @@ def get_match(match_id: int, session: Session = Depends(get_session)):
             stats = MatchStats.model_validate(json.loads(m.stats_json))
         except (ValueError, TypeError):
             stats = None
+
+    # Templated editorial blurb. Only doubles are skipped — H2H data for
+    # doubles pairings is too sparse for the templates to say anything
+    # meaningful, and the page already has the score + stats up top.
+    blurb: MatchBlurb | None = None
+    if not m.is_doubles and m.player1_id and m.player2_id:
+        p1 = session.get(Player, m.player1_id)
+        p2 = session.get(Player, m.player2_id)
+        tournament = session.get(Tournament, m.tournament_id) if m.tournament_id else None
+        if p1 and p2 and tournament:
+            h2h_ctx = compute_h2h_context(session, m, p1, p2)
+            kind, paragraph = build_blurb(m, p1, p2, tournament, h2h_ctx)
+            if kind and paragraph:
+                blurb = MatchBlurb(kind=kind, paragraph=paragraph)
+
     return MatchDetail(
         **summary.model_dump(),
         started_at=m.started_at,
         finished_at=m.finished_at,
         stats=stats,
+        blurb=blurb,
     )

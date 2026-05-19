@@ -109,6 +109,17 @@ export default function MatchScreen() {
         <FollowMatchButton matchId={match.id} />
       )}
 
+      {match.blurb && match.blurb.paragraph && (
+        <View className="rounded-lg border border-ink-700 bg-ink-900 p-4">
+          <Text className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+            {match.blurb.kind === "recap" ? "Recap" : "Preview"}
+          </Text>
+          <Text className="mt-2 text-sm leading-6 text-text-secondary">
+            {match.blurb.paragraph}
+          </Text>
+        </View>
+      )}
+
       {match.stats && (
         <MatchStatsPanel
           stats={match.stats}

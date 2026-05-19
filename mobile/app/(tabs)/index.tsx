@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Text, View } from "react-native";
 
 import { AdSlot } from "@/components/AdSlot";
+import { DigestHomeCard } from "@/components/DigestHomeCard";
 import { LiveDot } from "@/components/LiveDot";
 import { LiveTournamentBlock } from "@/components/LiveTournamentBlock";
 import { MatchCard } from "@/components/MatchCard";
@@ -185,6 +186,10 @@ export default function LiveScreen() {
           </View>
         </View>
       )}
+
+      {/* Weekly editorial digest teaser. Renders nothing if no digest
+          exists yet, so this is safe to leave wired on fresh installs. */}
+      <DigestHomeCard />
 
       <AdSlot slot="home-mid" />
 

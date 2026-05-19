@@ -95,10 +95,16 @@ export type MatchStats = {
   player2: PlayerStats;
 };
 
+export type MatchBlurb = {
+  kind: "preview" | "recap" | "";
+  paragraph: string;
+};
+
 export type MatchDetail = MatchSummary & {
   started_at: string | null;
   finished_at: string | null;
   stats: MatchStats | null;
+  blurb: MatchBlurb | null;
 };
 
 export type MatchSummary = {
@@ -356,6 +362,18 @@ export type IndexTournament = {
   today_count: number;
   is_in_progress: boolean;
   tours: string[];
+};
+
+export type DigestSummary = {
+  /** Monday of the ISO week the digest covers, e.g. "2026-05-11". */
+  week_start: string;
+  headline: string;
+  generated_at: string;
+};
+
+export type DigestDetail = DigestSummary & {
+  body_md: string;
+  model_name: string;
 };
 
 export type IndexSection = {

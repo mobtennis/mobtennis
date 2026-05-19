@@ -57,7 +57,22 @@ class MatchSummary(BaseModel):
     player2_seed: int | None = None
 
 
+class MatchBlurb(BaseModel):
+    """Templated paragraph for a match page. Generated server-side from
+    match + h2h data using a small pool of sentence templates rotated
+    deterministically by match.id, so the same match reads the same on
+    every visit but two similar matches don't read identical.
+
+    kind is "preview" for upcoming/scheduled, "recap" for finished/
+    retired/walkover. Empty for live matches (the live scorecard is
+    the page's interest at that point, not prose).
+    """
+    kind: str            # "preview" | "recap" | ""
+    paragraph: str       # the assembled sentences
+
+
 class MatchDetail(MatchSummary):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     stats: MatchStats | None = None
+    blurb: MatchBlurb | None = None
