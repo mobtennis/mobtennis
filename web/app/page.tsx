@@ -54,15 +54,17 @@ export default async function HomePage() {
     <div className="space-y-6">
       <LiveStreamRefresh enabled={todaysLive.some((m) => m.status === "live" || m.status === "suspended")} />
 
+      {/* Weekly editorial digest — top of the page so the editorial
+          voice is the first thing a visitor sees. Server-renders
+          nothing if no digest exists yet, so a fresh deploy with an
+          empty digests table still looks correct. */}
+      <DigestHomeCard />
+
       <HappeningNow
         liveMatches={todaysLive}
         upcomingFeatured={upcomingFeatured}
         tIndex={tIndex}
       />
-
-      {/* Weekly editorial digest — server-renders nothing if no digest
-          exists yet, so this is safe to leave wired on fresh deploys. */}
-      <DigestHomeCard />
 
       <AdSlot slot="home-mid" />
 

@@ -157,6 +157,11 @@ export default function LiveScreen() {
 
   return (
     <Screen onRefresh={onRefresh} refreshing={ir1 || ir2 || ir3}>
+      {/* Weekly editorial digest — top of the Live tab so the
+          editorial voice is the first thing a visitor sees. Renders
+          nothing when no digest exists yet. */}
+      <DigestHomeCard />
+
       <View className="px-1">
         <View className="flex-row items-center gap-2">
           <LiveDot label={false} />
@@ -186,10 +191,6 @@ export default function LiveScreen() {
           </View>
         </View>
       )}
-
-      {/* Weekly editorial digest teaser. Renders nothing if no digest
-          exists yet, so this is safe to leave wired on fresh installs. */}
-      <DigestHomeCard />
 
       <AdSlot slot="home-mid" />
 

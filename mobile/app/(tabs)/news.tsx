@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Text, View } from "react-native";
 
 import { AdSlot } from "@/components/AdSlot";
+import { DigestHomeCard } from "@/components/DigestHomeCard";
 import { FeedList } from "@/components/FeedList";
 import { Screen } from "@/components/Screen";
 import {
@@ -35,6 +36,9 @@ export default function NewsScreen() {
       }}
       refreshing={refetching}
     >
+      {/* Weekly editorial digest above the wire feed — gives the
+          tab an editorial lead before the chronological scroll. */}
+      <DigestHomeCard />
       <View className="px-1">
         <Text className="text-2xl font-bold text-text-primary">News</Text>
         <Text className="mt-1 text-sm text-text-secondary">

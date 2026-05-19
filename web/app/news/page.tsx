@@ -4,6 +4,7 @@ import {
   type VideoItemSummary,
 } from "@/lib/api";
 import { AdSlot } from "@/components/AdSlot";
+import { DigestHomeCard } from "@/components/DigestHomeCard";
 import { FeedList } from "@/components/FeedList";
 import { NewsFeedLoadMore } from "@/components/NewsFeedLoadMore";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -42,6 +43,9 @@ export default async function NewsPage() {
 
   return (
     <div className="space-y-3">
+      {/* Weekly editorial digest above the wire feed — gives the
+          tab an editorial lead before the chronological scroll. */}
+      <DigestHomeCard />
       <SectionHeader title="News" subtitle="Headlines and highlights from across the tennis world" />
       <FeedList items={above} />
       {(restNews.length > 0 || restVideos.length > 0) && <AdSlot slot="news-mid" />}
