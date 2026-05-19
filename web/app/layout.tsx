@@ -4,6 +4,8 @@ import Script from "next/script";
 import "@/styles/globals.css";
 import { AnalyticsInit } from "@/components/AnalyticsInit";
 import { BottomNav } from "@/components/BottomNav";
+import { EzoicRouteHandler } from "@/components/EzoicRouteHandler";
+import { EzoicScripts } from "@/components/EzoicScripts";
 import { Footer } from "@/components/Footer";
 import { TopBar } from "@/components/TopBar";
 
@@ -14,7 +16,6 @@ const AD_CLIENT_ID = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID;
 const AD_NETWORK: "adsense" | "ezoic" | "off" =
   (process.env.NEXT_PUBLIC_AD_NETWORK as "adsense" | "ezoic" | "off" | undefined) ??
   (AD_CLIENT_ID ? "adsense" : "off");
-const EZOIC_DOMAIN_ID = process.env.NEXT_PUBLIC_EZOIC_DOMAIN_ID;
 
 export const metadata: Metadata = {
   title: { default: "Mobtennis — live tennis, your way", template: "%s · Mobtennis" },
@@ -44,6 +45,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <AnalyticsInit />
+        {/* No-op unless AD_NETWORK=ezoic. Drives the per-route
+            placeholder lifecycle (destroyPlaceholders → showAds) on
+            App Router navigations. */}
+        <EzoicRouteHandler />
         <TopBar />
         <main className="mx-auto max-w-3xl px-3 pt-3 pb-24 md:pb-8">{children}</main>
         <Footer />
@@ -59,24 +64,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             async
           />
         )}
-        {/* Ezoic loader (sa.min.js + the per-domain config). Ezoic uses a
-            small inline init script to declare the domain ID and then
-            pulls their CDN-cached sa.min.js, which handles bidding and
-            placeholder filling. The domain ID is the integer they give
-            you in the publisher dashboard. */}
-        {AD_NETWORK === "ezoic" && EZOIC_DOMAIN_ID && (
-          <>
-            <Script id="ezoic-init" strategy="beforeInteractive">
-              {`window.ezstandalone = window.ezstandalone || {};
-ezstandalone.cmd = ezstandalone.cmd || [];`}
-            </Script>
-            <Script
-              src="//www.ezojs.com/ezoic/sa.min.js"
-              strategy="afterInteractive"
-              async
-            />
-          </>
-        )}
+        {/* Ezoic — CMP scripts, ezstandalone queue init, sa.min.js loader,
+            and analytics.js. Renders nothing unless AD_NETWORK=ezoic, so
+            switching networks is one env var. */}
+        <EzoicScripts />
       </body>
     </html>
   );

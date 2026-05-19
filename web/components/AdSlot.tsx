@@ -22,7 +22,10 @@
  *
  * Ezoic discovers placeholders by ID. Their dashboard generates numbers
  * like 101, 102, … which you paste into env vars below. The Ezoic
- * loader script (sa.min.js) is mounted in layout.tsx when network=ezoic.
+ * loader script (sa.min.js) is mounted by <EzoicScripts /> in
+ * layout.tsx; per-route showAds/destroyPlaceholders is driven by
+ * <EzoicRouteHandler />. Switching back is one env-var flip — see the
+ * removal checklist in components/EzoicScripts.tsx.
  */
 
 import { AdSenseInit } from "@/components/AdSenseInit";
@@ -103,15 +106,14 @@ export function AdSlot({ slot, size = "rectangle" }: Props) {
   if (AD_NETWORK === "ezoic") {
     const placeholderId = EZOIC_SLOT_TO_PLACEHOLDER[slot];
     if (!placeholderId) return null;
-    // Ezoic discovers ad units by the numeric id on the div. Their
-    // sa.min.js (mounted in layout.tsx) handles the rest — bidding,
-    // placement, refresh — based on the placeholder dashboard config.
+    // Per Ezoic docs: the placeholder div itself must stay bare (no
+    // styling) so an unfilled bid doesn't leave a fixed-height white
+    // space. Sizing lives on the outer wrapper instead, which still
+    // reserves layout while remaining invisible when empty.
     return (
-      <div
-        id={`ezoic-pub-ad-placeholder-${placeholderId}`}
-        data-ad-slot={slot}
-        className={`w-full ${MIN_HEIGHTS[size]}`}
-      />
+      <div data-ad-slot={slot} className={`w-full ${MIN_HEIGHTS[size]}`}>
+        <div id={`ezoic-pub-ad-placeholder-${placeholderId}`} />
+      </div>
     );
   }
 
