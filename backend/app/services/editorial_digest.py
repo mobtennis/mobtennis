@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
@@ -485,7 +486,8 @@ INTERNAL LINKS:
 - The user prompt ends with a `LINKS` table listing every internal URL you may reference (players, tournaments, head-to-head pages). Use them as markdown links — `[Display text](/path)` — inline in the body prose.
 - Link the FIRST mention of each player and each tournament that appears in the LINKS table. On subsequent mentions, use plain prose (last name only for players is fine).
 - You MAY link a "<player> vs <player>" or "rivalry" phrase to a `/h2h/...` URL when the surrounding sentence is explicitly about the head-to-head, but it's optional.
-- NEVER invent a URL. Only emit a markdown link whose URL appears verbatim in the LINKS table.
+- The URL inside the parentheses MUST be copied VERBATIM from the LINKS table. Do not shorten it, abbreviate it, or modify it in any way. If you abbreviate a player's name in the display text (e.g. "Dino Prizmic" → "D. Prizmic"), the URL must still be the full one shown in LINKS (`/players/dino-prizmic`, NOT `/players/d-prizmic`).
+- If a player or tournament isn't in the LINKS table, mention them without any link. NEVER fabricate a URL.
 - The headline is plain text, never markdown. Markdown links go in the body only.
 
 The headline is a punchy one-liner under 80 characters — newspaper style, no clickbait."""
@@ -630,6 +632,32 @@ def _call_claude(facts: dict) -> tuple[str, str] | None:
     return None
 
 
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+
+
+def sanitize_body_links(body: str, links: dict) -> str:
+    """Strip any markdown link whose URL isn't in the trusted LINKS table.
+    Replaces the link with its plain display text so the prose still reads.
+
+    Belt-and-suspenders against the model abbreviating both a name and
+    its URL together (e.g. emitting "[D. Prizmic](/players/d-prizmic)"
+    when the real slug is `dino-prizmic`). The system prompt forbids
+    this, but the cost of a 404 is high enough to warrant a check.
+    """
+    allowed: set[str] = set()
+    for bucket in ("players", "tournaments", "rivalries"):
+        for entry in links.get(bucket, []):
+            url = entry.get("url")
+            if url:
+                allowed.add(url)
+
+    def replace(m: re.Match) -> str:
+        text, href = m.group(1), m.group(2)
+        return m.group(0) if href in allowed else text
+
+    return _MD_LINK_RE.sub(replace, body)
+
+
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
@@ -668,6 +696,7 @@ def generate_digest(
     if result is None:
         return None
     headline, body = result
+    body = sanitize_body_links(body, facts.get("links", {}))
 
     if existing and force:
         existing.headline = headline
