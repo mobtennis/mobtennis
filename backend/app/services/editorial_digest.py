@@ -482,6 +482,10 @@ House style:
 - Do NOT mention any data point not in the supplied facts.
 - Do NOT use the words "AI" or "digest" or refer to yourself.
 
+EDITORIAL NOTES:
+- If the user prompt contains an `EDITORIAL NOTES` section, treat those facts as verified human-supplied context. Weave them naturally into the recap when the prose mentions the related player, tournament, or event. Notes are not inventions: they are additional truths to include.
+- Do not invent any other context beyond the supplied facts + notes.
+
 INTERNAL LINKS:
 - The user prompt ends with a `LINKS` table listing every internal URL you may reference (players, tournaments, head-to-head pages). Use them as markdown links — `[Display text](/path)` — inline in the body prose.
 - Link the FIRST mention of each player and each tournament that appears in the LINKS table. On subsequent mentions, use plain prose (last name only for players is fine).
@@ -547,6 +551,15 @@ def _build_user_prompt(facts: dict) -> str:
             + (f", {t['surface']}" if t["surface"] else "")
             + f"): {when}"
         )
+    if facts.get("editorial_notes"):
+        lines.append("")
+        lines.append(
+            "EDITORIAL NOTES — verified facts to weave into the recap "
+            "where relevant. Treat these as truths, not the model's "
+            "own additions:"
+        )
+        for note in facts["editorial_notes"]:
+            lines.append(f"  - {note}")
     lines.append("")
     lines.append("LINKS — use these markdown links verbatim when mentioning the corresponding entity. Do not invent URLs.")
     links = facts.get("links", {})
@@ -668,8 +681,15 @@ def generate_digest(
     week_start: date,
     *,
     force: bool = False,
+    editorial_notes: list[str] | None = None,
 ) -> EditorialDigest | None:
     """Top-level entry: collect facts, call Claude, persist row.
+
+    `editorial_notes` is an optional list of verified human-supplied
+    facts to weave into the recap — milestones, records, retirements,
+    or anything the underlying match data can't tell the model on its
+    own. Passed verbatim to the prompt as "EDITORIAL NOTES" and stored
+    in `source_json` for audit.
 
     Returns the saved row, or the existing row if `force=False` and one
     already exists for the week, or None on LLM failure / empty week.
@@ -683,11 +703,14 @@ def generate_digest(
         return existing
 
     facts = collect_week_facts(session, week_start)
+    if editorial_notes:
+        facts["editorial_notes"] = list(editorial_notes)
     if (
         not facts["finals"]
         and not facts.get("lower_tier_finals")
         and not facts["upsets"]
         and not facts["ongoing"]
+        and not facts.get("editorial_notes")
     ):
         log.info("No newsworthy facts for week %s — skipping", week_start)
         return None
