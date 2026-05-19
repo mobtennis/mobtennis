@@ -240,6 +240,45 @@ export type H2HResponse = {
   summary: H2HSummary | null;
 };
 
+export type SnapshotTitle = {
+  year: number;
+  tournament_slug: string;
+  tournament_name: string;
+  tournament_tour: string;
+  category: string | null;
+  surface: string | null;
+  final_opponent_slug: string | null;
+  final_opponent_name: string | null;
+  final_score: string | null;
+};
+
+export type SurfaceRecord = {
+  surface: string;
+  wins: number;
+  losses: number;
+};
+
+export type PlayerSnapshot = {
+  slug: string;
+  full_name: string;
+  career_wins: number;
+  career_losses: number;
+  career_titles: number;
+  career_finals: number;
+  slam_titles: number;
+  slam_finals: number;
+  best_slam: SnapshotTitle | null;
+  recent_wins: number;
+  recent_losses: number;
+  surfaces: SurfaceRecord[];
+  best_surface: string | null;
+  biggest_rival_slug: string | null;
+  biggest_rival_name: string | null;
+  biggest_rival_record_wins: number;
+  biggest_rival_record_losses: number;
+  recent_titles: SnapshotTitle[];
+};
+
 export type TournamentHistoryEntry = {
   tournament_slug: string;
   tournament_year: number;

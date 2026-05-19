@@ -24,6 +24,7 @@ import { FeedList } from "@/components/FeedList";
 import { TrackOnMount } from "@/components/TrackOnMount";
 import { EVENTS } from "@/lib/analytics";
 import { RecordsList } from "@/components/RecordsList";
+import { TournamentOverviewProse } from "@/components/TournamentOverviewProse";
 import { SectionHeader } from "@/components/SectionHeader";
 import { TourPills } from "@/components/TourPills";
 import { TournamentStatsGrid } from "@/components/TournamentStatsGrid";
@@ -158,6 +159,8 @@ export default async function TournamentPage({ params }: { params: Params }) {
       )}
 
       {overview?.stats && <TournamentStatsGrid stats={overview.stats} />}
+
+      <TournamentOverviewProse tournament={tournament} overview={overview} />
 
       <AdSlot slot="tournament-mid" />
 

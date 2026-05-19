@@ -7,6 +7,7 @@ import {
   type MatchSummary,
   type NewsItemSummary,
   type PlayerDetail,
+  type PlayerSnapshot,
   type TournamentHistoryEntry,
   type VideoItemSummary,
 } from "@/lib/api";
@@ -16,6 +17,7 @@ import { ExternalLinks } from "@/components/ExternalLinks";
 import { FeedList } from "@/components/FeedList";
 import { GetTheAppCard } from "@/components/GetTheAppCard";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { PlayerSnapshot as PlayerSnapshotProse } from "@/components/PlayerSnapshot";
 import { SocialCard } from "@/components/SocialCard";
 import { TournamentHistoryList } from "@/components/TournamentHistoryList";
 import { TournamentGroups } from "@/components/TournamentGroup";
@@ -34,13 +36,17 @@ export default async function PlayerPage({ params }: { params: Promise<{ slug: s
   const player = await api<PlayerDetail>(`/api/players/${slug}`).catch(() => null);
   if (!player) notFound();
 
-  const [matches, news, videos, history] = await Promise.all([
+  const [matches, news, videos, history, snapshot] = await Promise.all([
     // 15s revalidate. SSE refresh ticks against this cache — anything
     // tighter and the backend gets pounded by routine revalidations.
     api<MatchSummary[]>(`/api/players/${slug}/matches?limit=20`, { revalidate: 15 }).catch(() => []),
     api<NewsItemSummary[]>(`/api/news?player_slug=${slug}&limit=10`).catch(() => []),
     api<VideoItemSummary[]>(`/api/videos?player_slug=${slug}&limit=10`).catch(() => []),
     api<TournamentHistoryEntry[]>(`/api/players/${slug}/tournament-history?limit=5`).catch(() => []),
+    // Career snapshot changes only when finished matches land — caching
+    // for an hour is plenty and saves a non-trivial DB scan on every
+    // visit (we read all of the player's finished matches to compute it).
+    api<PlayerSnapshot>(`/api/players/${slug}/snapshot`, { revalidate: 3600 }).catch(() => null),
   ]);
   const feed = mergeFeed(news, videos);
 
@@ -82,6 +88,8 @@ export default async function PlayerPage({ params }: { params: Promise<{ slug: s
         {player.plays && <Stat label="Plays" value={player.plays} />}
         {player.turned_pro && <Stat label="Turned pro" value={player.turned_pro.toString()} />}
       </dl>
+
+      <PlayerSnapshotProse snapshot={snapshot} />
 
       <AdSlot slot="player-mid" />
 
