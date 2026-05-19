@@ -210,6 +210,26 @@ export function mergeFeed(
   return all;
 }
 
+export type H2HMeeting = {
+  year: number;
+  tournament_name: string | null;
+  tournament_slug: string | null;
+  tournament_tour: string | null;
+  round: string | null;
+  winner_slug: string | null;
+  score: string | null;
+};
+
+export type H2HSummary = {
+  total_meetings: number;
+  finals_meetings: number;
+  span_years: number | null;
+  first_meeting: H2HMeeting | null;
+  last_meeting: H2HMeeting | null;
+  current_streak_slug: string | null;
+  current_streak_count: number;
+};
+
 export type H2HResponse = {
   player1: PlayerSummary;
   player2: PlayerSummary;
@@ -217,6 +237,7 @@ export type H2HResponse = {
   p2_wins: number;
   matches: MatchSummary[];
   surface_splits: { surface: string; p1_wins: number; p2_wins: number }[];
+  summary: H2HSummary | null;
 };
 
 export type TournamentHistoryEntry = {

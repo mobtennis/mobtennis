@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { api, type H2HResponse, type PlayerDetail } from "@/lib/api";
 import { ChangeOpponentLink } from "@/components/ChangeOpponentLink";
+import { H2HOverview } from "@/components/H2HOverview";
 import { OpponentPicker } from "@/components/OpponentPicker";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { TournamentGroups } from "@/components/TournamentGroup";
@@ -79,6 +80,8 @@ export default async function H2HPage({ params }: { params: Promise<{ matchup: s
           <div className="h-full bg-accent transition-all" style={{ width: `${p1Pct}%` }} />
         </div>
       </header>
+
+      <H2HOverview data={data} />
 
       {data.surface_splits.length > 0 && (
         <section>
