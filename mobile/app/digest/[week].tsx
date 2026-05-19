@@ -56,6 +56,9 @@ export default function DigestWeekScreen() {
         <Text className="mt-3 text-xl font-bold text-text-primary">
           {digest.headline}
         </Text>
+        {/* Plain text on mobile — no /about route exists here yet.
+            When one is added, swap this for a Link/Pressable wrapper
+            matching the web byline. */}
         <Text className="mt-3 text-xs text-text-muted">
           By the Mobtennis team
         </Text>
