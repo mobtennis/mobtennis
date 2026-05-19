@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, Stack, useLocalSearchParams } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 
+import { DigestBody } from "@/components/DigestBody";
 import { Screen } from "@/components/Screen";
 import { SectionHeader } from "@/components/SectionHeader";
 import { api, type DigestDetail, type DigestSummary } from "@/lib/api";
@@ -65,9 +66,7 @@ export default function DigestWeekScreen() {
       </View>
 
       <View className="rounded-lg border border-ink-700 bg-ink-900 p-5">
-        <Text className="text-[15px] leading-7 text-text-secondary">
-          {digest.body_md}
-        </Text>
+        <DigestBody body={digest.body_md} />
       </View>
 
       <View className="flex-row gap-3">

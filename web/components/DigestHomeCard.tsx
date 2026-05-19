@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { stripMarkdownLinks } from "@/components/DigestBody";
 import { api, type DigestDetail } from "@/lib/api";
 
 /**
@@ -17,7 +18,12 @@ export async function DigestHomeCard() {
 
   // Two-line preview from the body. Splitting on ". " is good enough —
   // the body is a single paragraph so we just need the first beat.
-  const lead = digest.body_md.split(/(?<=\.)\s+/, 2).join(" ");
+  // Markdown links are flattened to plain text because the whole card
+  // is already a single Link to /digest/[week]; nested <a>s would
+  // produce invalid HTML and clobber the click target.
+  const lead = stripMarkdownLinks(digest.body_md)
+    .split(/(?<=\.)\s+/, 2)
+    .join(" ");
 
   return (
     <section className="rounded-lg border border-ink-700 bg-ink-900 p-4 shadow-card">

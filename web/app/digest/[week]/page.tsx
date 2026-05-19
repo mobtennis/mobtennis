@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { api, type DigestDetail, type DigestSummary } from "@/lib/api";
+import { DigestBody, stripMarkdownLinks } from "@/components/DigestBody";
 import { SectionHeader } from "@/components/SectionHeader";
 import { TrackOnMount } from "@/components/TrackOnMount";
 import { EVENTS } from "@/lib/analytics";
@@ -18,7 +19,10 @@ export async function generateMetadata({
   if (!digest) return { title: "Weekly digest" };
   return {
     title: digest.headline,
-    description: digest.body_md.split(/(?<=\.)\s+/, 2).join(" ").slice(0, 200),
+    description: stripMarkdownLinks(digest.body_md)
+      .split(/(?<=\.)\s+/, 2)
+      .join(" ")
+      .slice(0, 200),
   };
 }
 
@@ -70,12 +74,11 @@ export default async function DigestWeekPage({
       </header>
 
       <article className="rounded-lg border border-ink-700 bg-ink-900 p-5 shadow-card">
-        {/* Body is a single paragraph by design — render as such, no
-            markdown parser needed. Whitespace preserved in case the
-            model emits soft line breaks anyway. */}
-        <p className="whitespace-pre-line text-[15px] leading-7 text-text-secondary">
-          {digest.body_md}
-        </p>
+        {/* DigestBody parses inline `[text](/path)` links from the
+            markdown body so player / tournament / H2H mentions become
+            real internal links. No other markdown is supported by
+            design — the body is a single flowing paragraph. */}
+        <DigestBody body={digest.body_md} />
       </article>
 
       <nav className="flex items-center justify-between gap-3">

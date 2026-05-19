@@ -321,7 +321,7 @@ def collect_week_facts(session: Session, week_start: date) -> dict:
         _tier_order.get(u.tournament.category, 99), u.loser_rank,
     ))
 
-    return {
+    payload = {
         "week_start": week_start.isoformat(),
         "week_end": week_end.isoformat(),
         "finals": [_final_to_dict(f) for f in finals],
@@ -329,6 +329,11 @@ def collect_week_facts(session: Session, week_start: date) -> dict:
         "upsets": [_upset_to_dict(u) for u in upsets[:6]],  # cap noise
         "ongoing": ongoing,
     }
+    # LINKS table: every internal URL the model is allowed to reference,
+    # keyed by the prose label we want shown. Persisted in source_json so
+    # an audit run can reconstruct what the model was offered.
+    payload["links"] = _collect_links_table(payload)
+    return payload
 
 
 def _final_to_dict(f: _Final) -> dict:
@@ -359,6 +364,87 @@ def _upset_to_dict(u: _Upset) -> dict:
         "winner_rank": u.winner_rank,
         "loser": u.loser, "loser_slug": u.loser_slug,
         "loser_rank": u.loser_rank,
+    }
+
+
+def _collect_links_table(facts: dict) -> dict:
+    """Build the {players, tournaments, rivalries} table the model uses to
+    render internal links. Every URL here is constructed from a slug we
+    already trust (Sackmann ingest, Wikipedia catalog, or live consumer);
+    the model is forbidden from inventing URLs outside this list.
+
+    Returns a dict shaped:
+        {
+          "players":     [{"name": "...", "url": "/players/..."}, ...],
+          "tournaments": [{"label": "2026 Madrid (ATP)", "url": "..."}, ...],
+          "rivalries":   [{"label": "Sinner vs Zverev", "url": "/h2h/..."}],
+        }
+
+    Order is stable (input order, deduped) so the prompt is deterministic
+    for a given week's facts.
+    """
+    players: dict[str, str] = {}
+    tournaments: dict[str, str] = {}
+    rivalries: dict[str, str] = {}
+
+    def _add_player(name: str | None, slug: str | None) -> None:
+        if name and slug and name not in players:
+            players[name] = f"/players/{slug}"
+
+    def _add_tournament(
+        year: int | None, name: str | None,
+        tour: str | None, slug: str | None,
+    ) -> None:
+        if not (name and tour and slug):
+            return
+        label = f"{year} {name} ({tour.upper()})" if year else f"{name} ({tour.upper()})"
+        if label not in tournaments:
+            tournaments[label] = f"/tournaments/{tour}/{slug}"
+
+    def _add_rivalry(
+        p1_name: str | None, p1_slug: str | None,
+        p2_name: str | None, p2_slug: str | None,
+    ) -> None:
+        if not (p1_name and p1_slug and p2_name and p2_slug):
+            return
+        # Canonical URL uses alphabetised slug order — both directions
+        # resolve at the API level, but the model should always emit
+        # the same string for the same pair.
+        a, b = sorted([p1_slug, p2_slug])
+        url = f"/h2h/{a}-vs-{b}"
+        # Label uses last names; the model will adapt the surrounding
+        # prose ("rivalry", "head-to-head", "meeting") on its own.
+        last_a = p1_name.split()[-1] if p1_slug == a else p2_name.split()[-1]
+        last_b = p2_name.split()[-1] if p1_slug == a else p1_name.split()[-1]
+        label = f"{last_a} vs {last_b}"
+        if label not in rivalries:
+            rivalries[label] = url
+
+    for f in facts.get("finals", []) + facts.get("lower_tier_finals", []):
+        _add_player(f.get("champion"), f.get("champion_slug"))
+        _add_player(f.get("runner_up"), f.get("runner_up_slug"))
+        _add_tournament(
+            f.get("year"), f.get("tournament"),
+            f.get("tour"), f.get("tournament_slug"),
+        )
+        _add_rivalry(
+            f.get("champion"), f.get("champion_slug"),
+            f.get("runner_up"), f.get("runner_up_slug"),
+        )
+    for u in facts.get("upsets", []):
+        _add_player(u.get("winner"), u.get("winner_slug"))
+        _add_player(u.get("loser"), u.get("loser_slug"))
+        _add_tournament(
+            u.get("year"), u.get("tournament"),
+            u.get("tour"), u.get("tournament_slug"),
+        )
+    for o in facts.get("ongoing", []):
+        _add_tournament(o.get("year"), o.get("name"), o.get("tour"), o.get("slug"))
+
+    return {
+        "players": [{"name": n, "url": u} for n, u in players.items()],
+        "tournaments": [{"label": l, "url": u} for l, u in tournaments.items()],
+        "rivalries": [{"label": l, "url": u} for l, u in rivalries.items()],
     }
 
 
@@ -394,6 +480,13 @@ House style:
 - Do NOT invent matches, scores, players, or tournament names.
 - Do NOT mention any data point not in the supplied facts.
 - Do NOT use the words "AI" or "digest" or refer to yourself.
+
+INTERNAL LINKS:
+- The user prompt ends with a `LINKS` table listing every internal URL you may reference (players, tournaments, head-to-head pages). Use them as markdown links — `[Display text](/path)` — inline in the body prose.
+- Link the FIRST mention of each player and each tournament that appears in the LINKS table. On subsequent mentions, use plain prose (last name only for players is fine).
+- You MAY link a "<player> vs <player>" or "rivalry" phrase to a `/h2h/...` URL when the surrounding sentence is explicitly about the head-to-head, but it's optional.
+- NEVER invent a URL. Only emit a markdown link whose URL appears verbatim in the LINKS table.
+- The headline is plain text, never markdown. Markdown links go in the body only.
 
 The headline is a punchy one-liner under 80 characters — newspaper style, no clickbait."""
 
@@ -452,6 +545,21 @@ def _build_user_prompt(facts: dict) -> str:
             + (f", {t['surface']}" if t["surface"] else "")
             + f"): {when}"
         )
+    lines.append("")
+    lines.append("LINKS — use these markdown links verbatim when mentioning the corresponding entity. Do not invent URLs.")
+    links = facts.get("links", {})
+    if links.get("players"):
+        lines.append("Players:")
+        for p in links["players"]:
+            lines.append(f"  - [{p['name']}]({p['url']})")
+    if links.get("tournaments"):
+        lines.append("Tournaments:")
+        for t in links["tournaments"]:
+            lines.append(f"  - [{t['label']}]({t['url']})")
+    if links.get("rivalries"):
+        lines.append("Rivalries (optional — use only when the prose is explicitly about the head-to-head):")
+        for r in links["rivalries"]:
+            lines.append(f"  - [{r['label']}]({r['url']})")
     return "\n".join(lines)
 
 
@@ -468,8 +576,11 @@ _TOOL_SPEC = {
             "body": {
                 "type": "string",
                 "description": (
-                    "One paragraph, 220-300 words, no markdown formatting beyond "
-                    "plain prose. No newlines mid-paragraph."
+                    "One paragraph, 220-300 words. No newlines mid-paragraph. "
+                    "Inline markdown links of the form [Display text](/path) "
+                    "are allowed and expected — use the exact URLs from the "
+                    "LINKS section of the user prompt to anchor first mentions "
+                    "of each player and tournament. No other markdown."
                 ),
             },
         },

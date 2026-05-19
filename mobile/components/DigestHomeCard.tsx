@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 
+import { stripMarkdownLinks } from "@/components/DigestBody";
 import { api, type DigestDetail } from "@/lib/api";
 
 /**
@@ -20,7 +21,11 @@ export function DigestHomeCard() {
   });
   if (!digest) return null;
 
-  const lead = digest.body_md.split(/(?<=\.)\s+/, 2).join(" ");
+  // Flatten markdown links — the entire card is one tap target, so a
+  // nested Link inside the lead would clobber the outer Pressable.
+  const lead = stripMarkdownLinks(digest.body_md)
+    .split(/(?<=\.)\s+/, 2)
+    .join(" ");
 
   return (
     <Link href={`/digest/${digest.week_start}` as any} asChild>
