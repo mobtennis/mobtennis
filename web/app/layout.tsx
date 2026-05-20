@@ -17,6 +17,14 @@ const AD_NETWORK: "adsense" | "ezoic" | "off" =
   (process.env.NEXT_PUBLIC_AD_NETWORK as "adsense" | "ezoic" | "off" | undefined) ??
   (AD_CLIENT_ID ? "adsense" : "off");
 
+// Google Ads conversion-tracking tag. Renders on every page so a click
+// from any campaign — regardless of which URL the ad lands on — fires
+// the gtag and is attributable. Env-var override leaves the default in
+// code so a fresh deploy works without Vercel env config; set
+// NEXT_PUBLIC_GOOGLE_ADS_ID="" to disable.
+const GOOGLE_ADS_ID =
+  process.env.NEXT_PUBLIC_GOOGLE_ADS_ID ?? "AW-18177033731";
+
 export const metadata: Metadata = {
   title: { default: "Mobtennis — live tennis, your way", template: "%s · Mobtennis" },
   description:
@@ -68,6 +76,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             and analytics.js. Renders nothing unless AD_NETWORK=ezoic, so
             switching networks is one env var. */}
         <EzoicScripts />
+
+        {/* Google Ads gtag — conversion attribution for paid campaigns.
+            afterInteractive so it doesn't block first paint. The two
+            scripts mirror exactly what Google Ads dashboard exports. */}
+        {GOOGLE_ADS_ID && (
+          <>
+            <Script
+              id="google-ads-loader"
+              src={`https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_ID}`}
+              strategy="afterInteractive"
+              async
+            />
+            <Script id="google-ads-init" strategy="afterInteractive">
+              {`window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${GOOGLE_ADS_ID}');`}
+            </Script>
+          </>
+        )}
       </body>
     </html>
   );
