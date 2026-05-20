@@ -8,6 +8,8 @@ import json
 from datetime import datetime
 
 from slugify import slugify
+
+from app.services.tournament_resolver import canonical_slug
 from sqlmodel import Session, select
 
 from app.models.match import Match, MatchStatus
@@ -116,7 +118,7 @@ _TOURNAMENT_ID_CACHE: dict[tuple[str, Tour, int], int] = {}
 
 
 def _upsert_tournament(session: Session, name: str, tour: Tour, year: int, surface: str | None, external_id: str | None) -> int:
-    slug = slugify(name)[:80]
+    slug = canonical_slug(name)
     key = (slug, tour, year)
     cached = _TOURNAMENT_ID_CACHE.get(key)
     if cached is not None:

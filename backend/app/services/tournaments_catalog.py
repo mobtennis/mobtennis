@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 
-from slugify import slugify
+from app.services.tournament_resolver import canonical_slug
 from sqlmodel import Session, select
 
 from app.models.player import Tour
@@ -51,7 +51,7 @@ def cleanup_prefixed_brands(session: Session) -> int:
         clean_name = _strip_tour_prefix(t.name)
         if clean_name == t.name:
             continue
-        new_slug = slugify(clean_name)[:80]
+        new_slug = canonical_slug(clean_name)
         if new_slug == t.slug:
             t.name = clean_name
             session.add(t)
@@ -101,7 +101,7 @@ def upsert_catalog(session: Session, items: list[TournamentMeta]) -> tuple[int, 
             continue
 
         clean_name = _strip_tour_prefix(it.name)
-        slug = slugify(clean_name)[:80]
+        slug = canonical_slug(clean_name)
         if not slug:
             continue
 

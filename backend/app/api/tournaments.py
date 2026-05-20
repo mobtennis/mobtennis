@@ -21,6 +21,21 @@ from app.schemas.match import MatchSummary
 from app.schemas.tournament import TournamentDetail, TournamentSummary
 from app.services.categorize import tier_weight
 from app.services.rounds import round_depth
+from app.services.tournament_resolver import BRAND_ALIASES
+
+# Inverted alias map — built once at module load. URL handlers consult
+# this so a bookmark to an alias slug (e.g. /tournaments/atp/french-open)
+# still resolves to the canonical brand row after merge.
+_ALIAS_TO_CANONICAL: dict[str, str] = {}
+for _c, _aliases in BRAND_ALIASES.items():
+    for _a in _aliases:
+        _ALIAS_TO_CANONICAL[_a] = _c
+
+
+def _canonical_url_slug(slug: str) -> str:
+    """Map a request's brand slug through the alias table.
+    Returns the canonical brand slug used in the DB."""
+    return _ALIAS_TO_CANONICAL.get(slug, slug)
 
 router = APIRouter(prefix="/api/tournaments", tags=["tournaments"])
 
@@ -429,6 +444,7 @@ def tournament_champions(
     Registered ABOVE the `{tour}/{slug}/{year}` route so FastAPI doesn't try
     to parse "champions" as an int year.
     """
+    slug = _canonical_url_slug(slug)
     needed = limit + offset
     # Buffer for years that have no F-round match in our DB (incomplete
     # Sackmann coverage, ongoing edition, walkover-only final, etc.)
@@ -488,6 +504,7 @@ def tournament_overview(tour: Tour, slug: str, session: Session = Depends(get_se
       * Player lookups go through a per-request cache, so the same
         winner isn't fetched repeatedly across the records computations.
     """
+    slug = _canonical_url_slug(slug)
     instances = session.exec(
         select(
             Tournament.id, Tournament.year, Tournament.start_date,
@@ -685,6 +702,8 @@ def _resolve_current_edition(
     session: Session, tour: Tour, slug: str,
 ) -> Tournament | None:
     """Pick the most relevant Tournament row for (tour, slug).
+    Callers can pass either the canonical brand slug or any registered
+    alias — the resolver canonicalises before querying.
 
     Priority order:
       1. An edition with at least one live match.
@@ -695,6 +714,7 @@ def _resolve_current_edition(
 
     Returns None if no editions exist for this brand at all.
     """
+    slug = _canonical_url_slug(slug)
     rows = session.exec(
         select(Tournament)
         .where(Tournament.tour == tour, Tournament.slug == slug)
@@ -794,6 +814,7 @@ def tournament_matches(
     limit: int = Query(200, ge=1, le=500),
     session: Session = Depends(get_session),
 ):
+    slug = _canonical_url_slug(slug)
     t = session.exec(
         select(Tournament).where(
             Tournament.tour == tour, Tournament.slug == slug, Tournament.year == year
