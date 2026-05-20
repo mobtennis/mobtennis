@@ -28,6 +28,7 @@ from sqlmodel import Session, func, select
 
 from app.models.digest import EditorialDigest
 from app.models.match import Match, MatchStatus
+from app.models.news import NewsItem
 from app.models.player import Player
 from app.models.tournament import Tournament, TournamentCategory
 
@@ -70,6 +71,73 @@ _FINAL_ROUNDS_SHORT = {"F", "Final"}
 # included — losing in the round-of-16 of a Slam is still an upset
 # story when the winner is well outside the top tier.
 _EARLY_ROUNDS_FOR_UPSET = {"R128", "R64", "R32", "R16"}
+
+# Cap on news items we feed the LLM. 30 is a sweet spot — enough to
+# catch the week's storylines without bloating the prompt or letting
+# minor player chatter pad the recap. We surface most-recent first.
+_NEWS_CAP = 30
+
+
+def _strip_html(s: str | None) -> str:
+    """Crude HTML strip for news summaries. Many sources publish summary
+    fields wrapped in <p>, <ul>, <li>, sometimes with trailing "The post …"
+    boilerplate. We don't need full HTML parsing — the LLM tolerates a
+    bit of noise but appreciates a clean prompt."""
+    if not s:
+        return ""
+    out = re.sub(r"<[^>]+>", " ", s)
+    out = re.sub(r"\s+", " ", out).strip()
+    # Strip common boilerplate suffixes.
+    out = re.sub(
+        r"\s*The post\s+.+? appeared first on .+\.?$",
+        "", out, flags=re.IGNORECASE,
+    )
+    return out[:280]  # cap each summary so the prompt doesn't bloat
+
+
+def _collect_news(session: Session, week_start: date, week_end: date) -> list[dict]:
+    """News headlines + summaries from the past 7 days.
+
+    Returns shape: [{source, published_at, title, summary}, ...], most
+    recent first, capped at _NEWS_CAP. Past-week window is broad enough
+    to catch storylines that broke mid-week before the digest fires;
+    same-week-only would miss the Tuesday news drops by the time the
+    Monday-of-next-week cron runs.
+
+    Off-court news (withdrawals, injuries, retirements, scandals) lives
+    here — none of that is reachable from the match table.
+    """
+    start_dt = datetime.combine(week_start, time.min)
+    end_dt = datetime.combine(week_end, time.max)
+    rows = session.exec(
+        select(NewsItem)
+        .where(
+            NewsItem.published_at >= start_dt,
+            NewsItem.published_at <= end_dt,
+        )
+        .order_by(NewsItem.published_at.desc())
+        .limit(_NEWS_CAP * 3)  # pull a buffer; dedupe + cap below
+    ).all()
+
+    # Light dedup on title — multiple sources cover the same story with
+    # near-identical headlines. We don't try to be clever; just drop
+    # exact-title repeats.
+    seen_titles: set[str] = set()
+    out: list[dict] = []
+    for n in rows:
+        key = (n.title or "").strip().lower()
+        if not key or key in seen_titles:
+            continue
+        seen_titles.add(key)
+        out.append({
+            "source": n.source,
+            "published_at": n.published_at.isoformat(timespec="minutes"),
+            "title": n.title.strip(),
+            "summary": _strip_html(n.summary),
+        })
+        if len(out) >= _NEWS_CAP:
+            break
+    return out
 
 
 def _normalize_round(raw: str | None) -> str | None:
@@ -329,6 +397,10 @@ def collect_week_facts(session: Session, week_start: date) -> dict:
         "lower_tier_finals": [_final_to_dict(f) for f in lower_finals],
         "upsets": [_upset_to_dict(u) for u in upsets[:6]],  # cap noise
         "ongoing": ongoing,
+        # Headlines + summaries from our news feed for the same week.
+        # Off-court stories (withdrawals, injuries, retirements,
+        # protests) live here — invisible to the match-table.
+        "news": _collect_news(session, week_start, week_end),
     }
     # LINKS table: every internal URL the model is allowed to reference,
     # keyed by the prose label we want shown. Persisted in source_json so
@@ -469,9 +541,13 @@ You write weekly recaps of professional tennis (ATP + WTA combined).
 
 House style:
 - Cover only what the supplied facts mention. Do not invent matches, scores, players, tournament names, or formats.
-- The PRIMARY block is `Finals` (Slams, 1000s, 500s, year-end Finals). Lead and anchor the recap on these. If the primary block is non-empty, the recap MUST be dominated by it — at minimum 70% of the paragraph.
-- The `Lower-tier finals` block (250s) is supporting context only. Use it briefly to round out the week, never as the lead. If the primary block is empty (a quiet warm-up week), the 250 titles can take the lead but the prompt should still feel like a tour-news brief.
-- Lead with the single most consequential story (Slam result > 1000 final > major upset > 500 final > 250 final).
+- THREE input blocks carry first-class facts: `Finals`, `Upsets`, and `News`. The `News` block is a digest of headlines from our wire feed — it surfaces stories the match table cannot tell on its own (withdrawals, injuries, retirements, protests, controversies, off-court developments). Treat news items as verified facts the same way you treat finals.
+- Lead with the single most consequential story of the week. Decision order:
+    1. A withdrawal / injury / retirement / scandal involving a top-10 player and an upcoming Slam or 1000 — promote to the lead even when a Slam final happened the same week, IF the news is clearly more consequential.
+    2. Slam result > 1000 final > major upset > 500 final > 250 final.
+    3. Other news headlines.
+- The primary match block (`Finals` — Slams, 1000s, 500s, year-end Finals) should still dominate the prose when there are premier finals — at minimum 50%% of the paragraph when present. The remainder rounds in news context, upsets, and one closer sentence on what's next.
+- The `Lower-tier finals` block (250s) is supporting context only. Use it briefly to round out the week, never as the lead. If the primary block is empty (a quiet warm-up week), the 250 titles or news headlines can take the lead.
 - One flowing paragraph. No bullet points, no headers, no sub-paragraphs.
 - 220-300 words.
 - Present-tense for results that happened this week. Future-tense for what's next.
@@ -539,6 +615,22 @@ def _build_user_prompt(facts: dict) -> str:
             f"  - {u['tournament']} {u['round']}: {u['winner']} ({wr}) def. "
             f"{u['loser']} (ranked #{u['loser_rank']})"
         )
+    lines.append("")
+    if facts.get("news"):
+        lines.append("")
+        lines.append(
+            "News headlines from this week — off-court stories the match "
+            "table cannot tell. Treat these as verified facts. A "
+            "consequential story here (e.g. a top-10 withdrawal, an "
+            "injury, a retirement) can outrank a 1000-tier result for "
+            "the lead. Multiple headlines about the same story signal "
+            "its importance:"
+        )
+        for n in facts["news"]:
+            lines.append(
+                f"  - [{n['published_at']} {n['source']}] {n['title']}"
+                + (f"\n      {n['summary']}" if n.get("summary") else "")
+            )
     lines.append("")
     lines.append("Tournaments active at week-end or starting next week:")
     if not facts["ongoing"]:
@@ -711,6 +803,7 @@ def generate_digest(
         and not facts["upsets"]
         and not facts["ongoing"]
         and not facts.get("editorial_notes")
+        and not facts.get("news")
     ):
         log.info("No newsworthy facts for week %s — skipping", week_start)
         return None
