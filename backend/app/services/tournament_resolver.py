@@ -66,6 +66,9 @@ BRAND_ALIASES: dict[str, set[str]] = {
     # the sponsored / marketing name.
     "atp-finals":         {"tour-finals", "nitto-atp-finals", "atp-tour-finals"},
     "wta-finals":         {"wta-tour-finals", "wta-year-end-finals"},
+    # Sources caught by scripts/find_tournament_collisions.py:
+    "naples":             {"napoli"},
+    "nextgen-finals":     {"next-gen-finals", "next-gen-finals-jeddah"},
 }
 
 
