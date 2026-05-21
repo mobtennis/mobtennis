@@ -124,7 +124,7 @@ export default async function DigestWeekPage({
                     d.week_start === week ? "bg-ink-800" : ""
                   }`}
                 >
-                  <span className="w-24 shrink-0 text-[11px] uppercase tracking-wider text-text-muted">
+                  <span className="w-32 shrink-0 whitespace-nowrap text-[11px] uppercase tracking-wider text-text-muted">
                     {formatWeekLabel(d.week_start)}
                   </span>
                   <span className="line-clamp-1 flex-1 font-medium text-text-primary">

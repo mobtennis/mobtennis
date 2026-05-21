@@ -107,7 +107,7 @@ export default function DigestWeekScreen() {
                     i < archive.length - 1 ? "border-b border-ink-700" : ""
                   } ${d.week_start === week ? "bg-ink-800" : ""}`}
                 >
-                  <Text className="w-20 text-[11px] uppercase tracking-wider text-text-muted">
+                  <Text className="w-28 text-[11px] uppercase tracking-wider text-text-muted">
                     {formatWeekLabel(d.week_start)}
                   </Text>
                   <Text className="flex-1 text-sm font-medium text-text-primary" numberOfLines={1}>
