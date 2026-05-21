@@ -2,14 +2,22 @@ import type { TournamentOverview, TournamentDetail } from "@/lib/api";
 
 /**
  * Editorial paragraph for a tournament page. Wraps the records +
- * stats + last-edition data into prose. Renders nothing when there
- * isn't enough data to say anything substantive (e.g., brand-new
- * tournament with no history).
+ * stats + last-edition data into prose, with a Wikipedia "further
+ * reading" link at the end when available.
+ *
+ * This is the ONE descriptive block on the tournament page —
+ * previously the page rendered both this templated paragraph AND the
+ * raw Wikipedia description, which read as two competing intros.
+ * Wikipedia now contributes its link only; we own the prose.
  *
  * All copy is templated — no LLM. The shape of the sentences was
  * chosen so they read as a narrative paragraph rather than a list:
  * we mention the most decorated player first, then the recency
  * record, then the last edition.
+ *
+ * Renders nothing when there isn't enough data to say anything
+ * substantive AND no Wikipedia URL exists (i.e. a brand-new
+ * tournament with no history).
  */
 export function TournamentOverviewProse({
   tournament,
@@ -18,20 +26,32 @@ export function TournamentOverviewProse({
   tournament: TournamentDetail;
   overview: TournamentOverview | null;
 }) {
-  if (!overview) return null;
-  const lines = sentences(tournament, overview);
-  if (lines.length === 0) return null;
+  const lines = overview ? sentences(tournament, overview) : [];
+  const wikiUrl = tournament.wikipedia_url;
+  if (lines.length === 0 && !wikiUrl) return null;
 
   return (
     <section className="rounded-lg border border-ink-700 bg-ink-900 p-4 shadow-card">
       <h2 className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
         At a glance
       </h2>
-      <p className="mt-2 text-sm leading-6 text-text-secondary">
-        {lines.map((line, i) => (
-          <span key={i}>{line} </span>
-        ))}
-      </p>
+      {lines.length > 0 && (
+        <p className="mt-2 text-sm leading-6 text-text-secondary">
+          {lines.map((line, i) => (
+            <span key={i}>{line} </span>
+          ))}
+        </p>
+      )}
+      {wikiUrl && (
+        <a
+          href={wikiUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-block text-xs font-medium text-accent hover:text-accent-dim"
+        >
+          Read more on Wikipedia →
+        </a>
+      )}
     </section>
   );
 }

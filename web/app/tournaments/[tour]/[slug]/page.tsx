@@ -138,29 +138,18 @@ export default async function TournamentPage({ params }: { params: Params }) {
 
       <GetTheAppCard action={`follow ${tournament.name}`} variant="card" />
 
-      {tournament.description && (
-        <section className="rounded-lg border border-ink-700 bg-ink-900 p-4 shadow-card">
-          <p className="text-sm leading-relaxed text-text-secondary">{tournament.description}</p>
-          {tournament.wikipedia_url && (
-            <a
-              href={tournament.wikipedia_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 inline-block text-xs font-medium text-accent hover:text-accent-dim"
-            >
-              Read more on Wikipedia →
-            </a>
-          )}
-        </section>
-      )}
+      {/* Editorial overview — templated prose anchored on our records +
+          stats, with a Wikipedia "further reading" link at the end.
+          Replaces the previous setup where the raw Wikipedia description
+          ran here AND the templated paragraph appeared lower; that
+          read as two competing intros. */}
+      <TournamentOverviewProse tournament={tournament} overview={overview} />
 
       {isFutureEdition && tournament.start_date && (
         <Countdown targetDate={tournament.start_date} />
       )}
 
       {overview?.stats && <TournamentStatsGrid stats={overview.stats} />}
-
-      <TournamentOverviewProse tournament={tournament} overview={overview} />
 
       <AdSlot slot="tournament-mid" />
 
