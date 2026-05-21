@@ -5,7 +5,13 @@ from app.api._helpers import player_summary
 from app.db.session import get_session
 from app.models.player import Player, Tour
 from app.models.ranking import Ranking
-from app.schemas.ranking import RankingRow, RankingsResponse
+from app.schemas.ranking import (
+    LiveRankingRow,
+    LiveRankingsResponse,
+    RankingRow,
+    RankingsResponse,
+)
+from app.services.live_rankings import compute_live_rankings
 
 router = APIRouter(prefix="/api/rankings", tags=["rankings"])
 
@@ -37,5 +43,35 @@ def get_rankings(
         rows=[
             RankingRow(rank=r.rank, points=r.points, player=player_summary(p))
             for r, p in rows
+        ],
+    )
+
+
+@router.get("/{tour}/live", response_model=LiveRankingsResponse)
+def get_live_rankings(
+    tour: Tour,
+    limit: int = Query(200, ge=1, le=500),
+    session: Session = Depends(get_session),
+):
+    """Projected rankings: official snapshot + this week's earned − defending.
+
+    Re-sorted by `projected_points`. Per-row deltas show how far each
+    player has moved relative to the official rank. See
+    `app/services/live_rankings.py` for algorithm details and caveats.
+    """
+    week, rows = compute_live_rankings(session, tour, limit=limit)
+    return LiveRankingsResponse(
+        tour=tour.value,
+        week=week,
+        rows=[
+            LiveRankingRow(
+                rank=r.rank,
+                points=r.points,
+                projected_rank=r.projected_rank,
+                projected_points=r.projected_points,
+                points_change=r.points_change,
+                player=player_summary(r.player),
+            )
+            for r in rows
         ],
     )

@@ -1,48 +1,70 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { api, type RankingsResponse } from "@/lib/api";
+import {
+  api,
+  type LiveRankingsResponse,
+  type RankingsResponse,
+} from "@/lib/api";
 import { AdSlot } from "@/components/AdSlot";
-import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { RankingsLiveToggle } from "@/components/RankingsLiveToggle";
+import { RankingsRow } from "@/components/RankingsRow";
 import { RankingsTabs } from "@/components/RankingsTabs";
 import { SectionHeader } from "@/components/SectionHeader";
-import { flagEmoji } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ tour: string }> }) {
   const { tour } = await params;
   return { title: `${tour.toUpperCase()} rankings` };
 }
 
-export default async function RankingsPage({ params }: { params: Promise<{ tour: string }> }) {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function RankingsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ tour: string }>;
+  searchParams: SearchParams;
+}) {
   const { tour } = await params;
   if (tour !== "atp" && tour !== "wta") notFound();
 
-  const data = await api<RankingsResponse>(`/api/rankings/${tour}?limit=200`).catch(() => null);
+  const sp = await searchParams;
+  const view = sp.view === "live" ? "live" : "official";
+
+  // Official snapshot: cached longer since it only changes weekly.
+  // Live projection: re-fetched every 5 min — backend has its own 60s
+  // in-process cache so this is cheap.
+  const data =
+    view === "live"
+      ? await api<LiveRankingsResponse>(`/api/rankings/${tour}/live?limit=200`, {
+          revalidate: 300,
+        }).catch(() => null)
+      : await api<RankingsResponse>(`/api/rankings/${tour}?limit=200`, {
+          revalidate: 3600,
+        }).catch(() => null);
   if (!data) notFound();
+
+  const subtitle =
+    view === "live"
+      ? "Projected — current week's earned minus defending"
+      : `Week of ${new Date(data.week).toLocaleDateString()}`;
 
   return (
     <div className="space-y-3">
       <SectionHeader
         title={`${tour.toUpperCase()} Rankings`}
-        subtitle={`Week of ${new Date(data.week).toLocaleDateString()}`}
+        subtitle={subtitle}
       />
       <RankingsTabs active={tour} />
+      <RankingsLiveToggle active={view} />
 
       <ul className="divide-y divide-ink-700/50 overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
         {data.rows.slice(0, 25).map((row) => (
-          <li key={`${row.rank}-${row.player.slug}`} className="flex items-center gap-3 px-3 py-2.5">
-            <span className="w-7 shrink-0 text-right text-sm font-bold tnum text-text-secondary">{row.rank}</span>
-            <PlayerAvatar
-              name={row.player.full_name}
-              imageUrl={row.player.image_url}
-              countryCode={row.player.country_code}
-            />
-            <Link href={`/players/${row.player.slug}`} className="min-w-0 flex-1 truncate text-sm font-medium hover:text-accent">
-              {row.player.full_name}
-            </Link>
-            <span className="shrink-0 text-xs">{flagEmoji(row.player.country_code)}</span>
-            {row.points && <span className="w-16 shrink-0 text-right text-xs tnum text-text-secondary">{row.points.toLocaleString()} pts</span>}
-          </li>
+          <RankingsRow
+            key={`${row.player.slug}`}
+            row={row}
+            live={view === "live"}
+          />
         ))}
       </ul>
 
@@ -51,19 +73,11 @@ export default async function RankingsPage({ params }: { params: Promise<{ tour:
       {data.rows.length > 25 && (
         <ul className="divide-y divide-ink-700/50 overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
           {data.rows.slice(25).map((row) => (
-            <li key={`${row.rank}-${row.player.slug}`} className="flex items-center gap-3 px-3 py-2.5">
-              <span className="w-7 shrink-0 text-right text-sm font-bold tnum text-text-secondary">{row.rank}</span>
-              <PlayerAvatar
-                name={row.player.full_name}
-                imageUrl={row.player.image_url}
-                countryCode={row.player.country_code}
-              />
-              <Link href={`/players/${row.player.slug}`} className="min-w-0 flex-1 truncate text-sm font-medium hover:text-accent">
-                {row.player.full_name}
-              </Link>
-              <span className="shrink-0 text-xs">{flagEmoji(row.player.country_code)}</span>
-              {row.points && <span className="w-16 shrink-0 text-right text-xs tnum text-text-secondary">{row.points.toLocaleString()} pts</span>}
-            </li>
+            <RankingsRow
+              key={`${row.player.slug}`}
+              row={row}
+              live={view === "live"}
+            />
           ))}
         </ul>
       )}

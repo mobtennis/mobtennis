@@ -171,6 +171,18 @@ export type RankingsResponse = {
   rows: RankingRow[];
 };
 
+export type LiveRankingRow = RankingRow & {
+  projected_rank: number;
+  projected_points: number;
+  points_change: number;
+};
+
+export type LiveRankingsResponse = {
+  tour: string;
+  week: string;
+  rows: LiveRankingRow[];
+};
+
 export type NewsItemSummary = {
   id: number;
   source: string;
