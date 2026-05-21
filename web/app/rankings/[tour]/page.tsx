@@ -55,8 +55,14 @@ export default async function RankingsPage({
         title={`${tour.toUpperCase()} Rankings`}
         subtitle={subtitle}
       />
-      <RankingsTabs active={tour} />
-      <RankingsLiveToggle active={view} />
+      <div className="flex flex-wrap items-center gap-2">
+        <RankingsTabs active={tour} />
+        {/* Thin vertical divider between tour pills and view pills —
+            keeps everything on one line on phones where stacking the
+            two rows was eating too much vertical space. */}
+        <span className="h-5 w-px shrink-0 bg-ink-700" aria-hidden />
+        <RankingsLiveToggle active={view} />
+      </div>
 
       <ul className="divide-y divide-ink-700/50 overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
         {data.rows.slice(0, 25).map((row) => (

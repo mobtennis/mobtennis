@@ -28,10 +28,10 @@ export function RankingsLiveToggle({ active }: { active: "official" | "live" }) 
       <Link
         href={url(kind)}
         prefetch={false}
-        className={`rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-wider ${
+        className={`rounded-full border px-3 py-1 text-xs font-medium ${
           isActive
-            ? "border-accent bg-accent/10 text-accent"
-            : "border-ink-700 bg-ink-900 text-text-secondary hover:border-ink-600"
+            ? "border-accent bg-accent/15 text-accent"
+            : "border-ink-700 bg-ink-900 text-text-secondary hover:text-text-primary"
         }`}
       >
         {label}
