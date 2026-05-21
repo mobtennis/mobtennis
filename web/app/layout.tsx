@@ -58,7 +58,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             App Router navigations. */}
         <EzoicRouteHandler />
         <TopBar />
-        <main className="mx-auto max-w-3xl px-3 pt-3 pb-24 md:pb-8">{children}</main>
+        {/* No bottom padding on `main` — the Footer below owns the
+            clearance for the mobile BottomNav (pb-24 there). Setting
+            it on both produced a giant gap between the last content
+            card and the footer border on mobile. */}
+        <main className="mx-auto max-w-3xl px-3 pt-3">{children}</main>
         <Footer />
         <BottomNav />
         {/* AdSense loader: served only when the active network is AdSense

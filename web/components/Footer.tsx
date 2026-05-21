@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export function Footer() {
   return (
-    <footer className="mx-auto mt-8 max-w-3xl border-t border-ink-700/40 px-4 pt-6 pb-3 text-[11px] text-text-muted">
+    <footer className="mx-auto mt-8 max-w-3xl border-t border-ink-700/40 px-4 pt-6 pb-24 md:pb-3 text-[11px] text-text-muted">
       <nav className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
         <Link
           href="/about"
