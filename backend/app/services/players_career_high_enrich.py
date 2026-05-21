@@ -292,11 +292,17 @@ async def enrich_one(
     article in the same pass.
     """
     wikitext: str | None = None
+    expected = _expected_surname(player)
 
-    # 1. Try the stored URL first.
+    # 1. Try the stored URL first — but only if the URL's title also
+    # plausibly matches the player. Stored URLs from the upstream bio
+    # enrichment are sometimes wrong (tournament / season / list
+    # pages); the season pages in particular can transclude a tennis
+    # biography infobox, which would otherwise sneak past
+    # `_is_player_bio` even though the article isn't about this player.
     if player.wikipedia_url:
         title = _title_from_url(player.wikipedia_url)
-        if title:
+        if title and _title_matches_player(title, expected):
             wikitext = await _fetch_lead_wikitext(title, client)
 
     # 2. If we have no wikitext, or it's not a tennis bio, hunt.
