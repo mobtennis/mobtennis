@@ -50,17 +50,24 @@ export default async function CampaignBriefsPage({
       )}
 
       {data.briefs.map((b, i) => (
-        <CampaignBriefCard key={i} brief={b} />
+        <CampaignBriefCard key={i} brief={b} weekStart={data.week_start} />
       ))}
 
       <footer className="rounded-md border border-ink-700 bg-ink-900 px-4 py-3 text-xs text-text-muted">
         <strong className="text-text-secondary">How to use:</strong>{" "}
         Open Google Ads → New search campaign. For each brief above,
         create one ad group with the keyword list and one Responsive Search
-        Ad with the headlines + descriptions. Set the landing URL to the
-        brief's path on mob.tennis. Default suggested daily budget is
-        $5–$10 per campaign for 14 days; bid Maximize Clicks until you
-        have conversion data.
+        Ad with the headlines + descriptions. Paste the{" "}
+        <strong className="text-text-secondary">Final URL</strong> into the
+        ad's Final URL field — it's pre-tagged with{" "}
+        <code className="rounded bg-ink-800 px-1">utm_source=google</code>{" "}
+        so PostHog can attribute every click and subsequent visit back to
+        the campaign. Default suggested daily budget is $5–$10 per campaign
+        for 14 days; bid Maximize Clicks until you have conversion data.
+        After 1-2 weeks you'll be able to compare campaigns by
+        cost-per-session and per-user retention in PostHog by filtering on
+        the <code className="rounded bg-ink-800 px-1">$initial_utm_campaign</code>{" "}
+        property.
       </footer>
     </div>
   );
