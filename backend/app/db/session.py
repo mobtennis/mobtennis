@@ -97,6 +97,7 @@ def _migrate() -> None:
         ("matches", "player1_seed", "INTEGER"),
         ("matches", "player2_seed", "INTEGER"),
         ("video_items", "is_portrait", "INTEGER"),
+        ("editorial_digests", "campaign_briefs_json", "TEXT"),
     ]
 
     with engine.begin() as conn:

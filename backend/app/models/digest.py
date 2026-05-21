@@ -30,6 +30,14 @@ class EditorialDigest(SQLModel, table=True):
     # re-querying the DB.
     source_json: str
 
+    # JSON-serialised list of Google Ads campaign briefs produced
+    # alongside the digest. Each entry has a theme, keyword list, ad
+    # headlines, descriptions, and a landing URL on mob.tennis.
+    # Surfaced on /admin/campaigns/<week> for the human operator to
+    # copy-paste into Google Ads UI. Null on backfilled digests that
+    # predate this feature.
+    campaign_briefs_json: str | None = None
+
     # Provider model id at time of generation. Useful when we eventually
     # swap models — old rows stay attributable to the model that wrote
     # them.

@@ -558,6 +558,13 @@ House style:
 - Do NOT mention any data point not in the supplied facts.
 - Do NOT use the words "AI" or "digest" or refer to yourself.
 
+CAMPAIGN BRIEFS:
+- Alongside the body, return 3-5 Google Ads campaign briefs in the `campaign_briefs` field of the tool call.
+- Each brief targets ONE story or theme that tennis fans will likely search for in the coming 1-2 weeks. Pick stories with the highest expected search volume: Slam draws / results, top-10 results, injuries, withdrawals, retirements, ranking-shift narratives.
+- For each brief, generate KEYWORDS (search queries fans type), RSA AD HEADLINES (each ≤ 30 chars), RSA AD DESCRIPTIONS (each ≤ 90 chars), and a LANDING_PATH (internal mob.tennis URL from the LINKS section — most-specific page for the topic).
+- Stay strictly within the supplied facts. No invented stories, scores, players, or tournament names. Same rules as the body.
+- Ad copy goal: drive a click. Honest, factual, no clickbait, no superlatives the data doesn't support. Mention mob.tennis or the value (free, no sign-up, live scores) in at least one headline.
+
 EDITORIAL NOTES:
 - If the user prompt contains an `EDITORIAL NOTES` section, treat those facts as verified human-supplied context. Weave them naturally into the recap when the prose mentions the related player, tournament, or event. Notes are not inventions: they are additional truths to include.
 - Do not invent any other context beyond the supplied facts + notes.
@@ -672,7 +679,10 @@ def _build_user_prompt(facts: dict) -> str:
 
 _TOOL_SPEC = {
     "name": "submit_digest",
-    "description": "Submit the final headline and body for the weekly tennis digest.",
+    "description": (
+        "Submit the final headline and body for the weekly tennis digest, "
+        "PLUS 3-5 Google Ads campaign briefs derived from the week's stories."
+    ),
     "input_schema": {
         "type": "object",
         "properties": {
@@ -690,15 +700,97 @@ _TOOL_SPEC = {
                     "of each player and tournament. No other markdown."
                 ),
             },
+            "campaign_briefs": {
+                "type": "array",
+                "description": (
+                    "3-5 Google Ads campaign briefs to drive search traffic "
+                    "to mob.tennis this week. Each brief targets ONE story "
+                    "or theme that tennis fans are likely to search for in "
+                    "the next 1-2 weeks. Pick stories with clear search "
+                    "intent (Slam draw, big result, injury/withdrawal, "
+                    "ranking shift). DO NOT invent stories — every brief "
+                    "must derive from the supplied facts."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "theme": {
+                            "type": "string",
+                            "description": (
+                                "Short label for the campaign (≤ 50 chars). "
+                                "e.g. 'Alcaraz Wimbledon withdrawal'."
+                            ),
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "description": (
+                                "1-2 sentences on why fans will search this "
+                                "topic in the coming 2 weeks. Reference the "
+                                "supplied facts."
+                            ),
+                        },
+                        "keywords": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "5-15 search terms or phrases. Each ≤ 80 "
+                                "chars. Mix exact player names, event names, "
+                                "and natural-language queries fans actually "
+                                "type. No hashtags, no quotes."
+                            ),
+                        },
+                        "ad_headlines": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "5-10 Google Ads RSA headlines. EACH ≤ 30 "
+                                "characters (Google Ads will reject longer). "
+                                "Vary the angle: one with the player name, "
+                                "one with the result, one with the site "
+                                "promise, etc."
+                            ),
+                        },
+                        "ad_descriptions": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "2-4 Google Ads RSA descriptions. EACH ≤ 90 "
+                                "characters. Should expand on the headline "
+                                "and end with a value prop (live scores, "
+                                "free, no signup, etc.)."
+                            ),
+                        },
+                        "landing_path": {
+                            "type": "string",
+                            "description": (
+                                "Internal mob.tennis path the ad should land "
+                                "on. MUST start with '/'. Pick the most "
+                                "relevant page from the LINKS section of the "
+                                "user prompt — usually a /players/<slug>, "
+                                "/tournaments/<tour>/<slug>, or "
+                                "/digest/<week_start>. Default to the "
+                                "current digest URL if no better fit exists."
+                            ),
+                        },
+                    },
+                    "required": [
+                        "theme", "rationale", "keywords",
+                        "ad_headlines", "ad_descriptions", "landing_path",
+                    ],
+                },
+            },
         },
-        "required": ["headline", "body"],
+        "required": ["headline", "body", "campaign_briefs"],
     },
 }
 
 
-def _call_claude(facts: dict) -> tuple[str, str] | None:
-    """Return (headline, body) or None if the call fails / API key
-    missing. Caller decides whether to skip or raise."""
+def _call_claude(facts: dict) -> tuple[str, str, list[dict]] | None:
+    """Return (headline, body, campaign_briefs) or None if the call
+    fails / API key missing. Caller decides whether to skip or raise.
+
+    `campaign_briefs` is always a list — empty if the model declined
+    or the field is malformed."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         log.warning("ANTHROPIC_API_KEY not set — skipping digest generation")
@@ -714,7 +806,9 @@ def _call_claude(facts: dict) -> tuple[str, str] | None:
     try:
         resp = client.messages.create(
             model=MODEL_NAME,
-            max_tokens=1500,
+            # Bumped from 1500 — campaign_briefs adds ~600-1000 output
+            # tokens (3-5 briefs × ~150 tokens each).
+            max_tokens=3000,
             system=SYSTEM_PROMPT,
             tools=[_TOOL_SPEC],
             tool_choice={"type": "tool", "name": "submit_digest"},
@@ -731,10 +825,121 @@ def _call_claude(facts: dict) -> tuple[str, str] | None:
             payload = block.input
             headline = (payload.get("headline") or "").strip()
             body = (payload.get("body") or "").strip()
+            briefs_raw = payload.get("campaign_briefs") or []
+            if not isinstance(briefs_raw, list):
+                briefs_raw = []
+            # Build the set of trusted landing URLs from the LINKS
+            # table (player + tournament + h2h URLs we offered) PLUS
+            # this digest's own URL as a safe default.
+            links = facts.get("links", {}) or {}
+            allowed: set[str] = set()
+            for bucket in ("players", "tournaments", "rivalries"):
+                for entry in links.get(bucket, []):
+                    u = entry.get("url")
+                    if u:
+                        allowed.add(u)
+            digest_url = f"/digest/{facts.get('week_start', '')}"
+            allowed.add(digest_url)
+            briefs = _validate_campaign_briefs(
+                briefs_raw,
+                allowed_urls=allowed,
+                fallback_url=digest_url,
+            )
             if headline and body:
-                return headline, body
+                return headline, body, briefs
     log.warning("Claude returned no usable tool_use block for week %s", facts["week_start"])
     return None
+
+
+# Google Ads RSA hard limits — anything over is auto-rejected by the
+# UI on import. We truncate rather than drop so a too-long item still
+# offers value, and we cap the brief count to keep storage / UI clean.
+_MAX_HEADLINE_CHARS = 30
+_MAX_DESCRIPTION_CHARS = 90
+_MAX_KEYWORD_CHARS = 80
+_MAX_BRIEFS = 6
+
+
+def _word_truncate(s: str, limit: int) -> str:
+    """Truncate `s` to at most `limit` chars, breaking on a word boundary
+    rather than mid-word. Used for ad headlines/descriptions where
+    "Alcaraz Withdraws From Roland " mid-word looks unprofessional in
+    a search ad. Returns the original string when already in-budget."""
+    s = s.strip()
+    if len(s) <= limit:
+        return s
+    cut = s[:limit]
+    # Walk back to the last space; drop the partial word.
+    last_space = cut.rfind(" ")
+    if last_space >= int(limit * 0.6):
+        return cut[:last_space].rstrip(" ,.;:-")
+    # No reasonable word boundary — drop the whole headline.
+    return ""
+
+
+def _validate_campaign_briefs(
+    raw: list, *, allowed_urls: set[str] | None = None,
+    fallback_url: str | None = None,
+) -> list[dict]:
+    """Shape-check + sanitise each brief from the LLM.
+
+    Drops malformed entries. Word-truncates over-long headlines /
+    descriptions (rather than mid-word slicing). Validates landing_path
+    against `allowed_urls` (the LINKS table from this week's facts plus
+    the digest URL itself); a brief targeting an invented URL gets
+    redirected to `fallback_url` rather than discarded — the keyword +
+    copy work still has value, the operator can re-point if needed."""
+    allowed_urls = allowed_urls or set()
+    out: list[dict] = []
+    for item in raw[:_MAX_BRIEFS]:
+        if not isinstance(item, dict):
+            continue
+        theme = (item.get("theme") or "").strip()
+        rationale = (item.get("rationale") or "").strip()
+        landing_path = (item.get("landing_path") or "").strip()
+        if not theme:
+            continue
+        # Validate landing — must be one of the URLs we offered.
+        if not landing_path.startswith("/") or (
+            allowed_urls and landing_path not in allowed_urls
+        ):
+            if fallback_url:
+                landing_path = fallback_url
+            else:
+                continue
+
+        keywords = [
+            s.strip()[:_MAX_KEYWORD_CHARS]
+            for s in (item.get("keywords") or [])
+            if isinstance(s, str) and s.strip()
+        ]
+        ad_headlines = [
+            t for t in (
+                _word_truncate(s, _MAX_HEADLINE_CHARS)
+                for s in (item.get("ad_headlines") or [])
+                if isinstance(s, str)
+            )
+            if t
+        ]
+        ad_descriptions = [
+            t for t in (
+                _word_truncate(s, _MAX_DESCRIPTION_CHARS)
+                for s in (item.get("ad_descriptions") or [])
+                if isinstance(s, str)
+            )
+            if t
+        ]
+        if not (keywords and ad_headlines and ad_descriptions):
+            continue
+        out.append({
+            "theme": theme[:60],
+            "rationale": rationale[:300],
+            "keywords": keywords,
+            "ad_headlines": ad_headlines,
+            "ad_descriptions": ad_descriptions,
+            "landing_path": landing_path,
+        })
+    return out
 
 
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
@@ -811,13 +1016,15 @@ def generate_digest(
     result = _call_claude(facts)
     if result is None:
         return None
-    headline, body = result
+    headline, body, campaign_briefs = result
     body = sanitize_body_links(body, facts.get("links", {}))
+    briefs_blob = json.dumps(campaign_briefs) if campaign_briefs else None
 
     if existing and force:
         existing.headline = headline
         existing.body_md = body
         existing.source_json = json.dumps(facts)
+        existing.campaign_briefs_json = briefs_blob
         existing.model_name = MODEL_NAME
         existing.generated_at = datetime.utcnow()
         session.add(existing)
@@ -830,6 +1037,7 @@ def generate_digest(
         headline=headline,
         body_md=body,
         source_json=json.dumps(facts),
+        campaign_briefs_json=briefs_blob,
         model_name=MODEL_NAME,
     )
     session.add(row)

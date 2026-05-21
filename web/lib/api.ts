@@ -388,6 +388,22 @@ export type DigestDetail = DigestSummary & {
   model_name: string;
 };
 
+export type CampaignBrief = {
+  theme: string;
+  rationale: string;
+  keywords: string[];
+  ad_headlines: string[];
+  ad_descriptions: string[];
+  landing_path: string;
+};
+
+export type CampaignBriefsResponse = {
+  week_start: string;
+  headline: string;
+  generated_at: string;
+  briefs: CampaignBrief[];
+};
+
 export type IndexSection = {
   key: string;
   title: string;
