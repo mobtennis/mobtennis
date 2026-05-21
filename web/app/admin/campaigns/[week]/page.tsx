@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { api, type CampaignBriefsResponse } from "@/lib/api";
 import { CampaignBriefCard } from "@/components/CampaignBriefCard";
+import { GoogleAdsEditorExport } from "@/components/GoogleAdsEditorExport";
 
 export const metadata = {
   title: "Campaign briefs",
@@ -48,6 +49,8 @@ export default async function CampaignBriefsPage({
           No briefs were produced for this week.
         </div>
       )}
+
+      <GoogleAdsEditorExport briefs={data.briefs} weekStart={data.week_start} />
 
       {data.briefs.map((b, i) => (
         <CampaignBriefCard key={i} brief={b} weekStart={data.week_start} />
