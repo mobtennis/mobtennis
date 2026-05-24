@@ -12,7 +12,7 @@ export default function PrivacyPage() {
 
       <section className="space-y-2 text-sm text-text-secondary">
         <p>
-          Mobtennis (&quot;we&quot;, &quot;us&quot;) operates{" "}
+          Mob Tennis (&quot;we&quot;, &quot;us&quot;) operates{" "}
           <a
             href="https://mob.tennis"
             className="text-accent underline decoration-dotted underline-offset-4 hover:text-accent-dim"
@@ -32,7 +32,7 @@ export default function PrivacyPage() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Information we collect</h2>
         <p className="text-sm text-text-secondary">
-          When you visit Mobtennis, our servers automatically log a small set
+          When you visit Mob Tennis, our servers automatically log a small set
           of technical details with each request:
         </p>
         <ul className="ml-4 list-disc space-y-1 text-sm text-text-secondary">
@@ -52,7 +52,7 @@ export default function PrivacyPage() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Cookies and local storage</h2>
         <p className="text-sm text-text-secondary">
-          Mobtennis uses{" "}
+          Mob Tennis uses{" "}
           <code className="rounded bg-ink-900 px-1 py-0.5 text-[11px]">
             localStorage
           </code>{" "}
@@ -87,7 +87,7 @@ export default function PrivacyPage() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Advertising</h2>
         <p className="text-sm text-text-secondary">
-          Mobtennis displays ads to fund the project (profits flow to the
+          Mob Tennis displays ads to fund the project (profits flow to the
           Tennis Association of Iceland — see{" "}
           <a
             href="/about"

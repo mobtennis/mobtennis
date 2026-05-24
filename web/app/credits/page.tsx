@@ -6,7 +6,7 @@ export default function CreditsPage() {
       <header>
         <h1 className="text-2xl font-bold tracking-tight">Credits & data sources</h1>
         <p className="mt-1 text-sm text-text-secondary">
-          Mobtennis stands on the shoulders of a few generous data sets.
+          Mob Tennis stands on the shoulders of a few generous data sets.
         </p>
       </header>
 

@@ -29,10 +29,10 @@ export function GetTheAppCard({ action, variant = "card", className }: Props) {
         </div>
         <div className="flex-1">
           <h3 className="text-base font-semibold tracking-tight">
-            {action ? `${capitalize(action)} in the app` : "Personalize Mobtennis in the app"}
+            {action ? `${capitalize(action)} in the app` : "Personalize Mob Tennis in the app"}
           </h3>
           <p className="mt-1 text-sm text-text-secondary">
-            Follow your favourite players and tournaments, get score alerts, and take Mobtennis with
+            Follow your favourite players and tournaments, get score alerts, and take Mob Tennis with
             you to the court. No account needed — your follows live on your phone.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">

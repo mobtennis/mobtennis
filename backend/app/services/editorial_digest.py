@@ -536,7 +536,7 @@ def _str_enum(v) -> str:
 # ---------------------------------------------------------------------------
 
 
-SYSTEM_PROMPT = """You are the editorial voice of Mobtennis, a tennis fan site.
+SYSTEM_PROMPT = """You are the editorial voice of Mob Tennis, a tennis fan site.
 You write weekly recaps of professional tennis (ATP + WTA combined).
 
 House style:

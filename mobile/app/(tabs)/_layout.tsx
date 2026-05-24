@@ -44,7 +44,7 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: "Live",
-          headerTitle: "Mobtennis",
+          headerTitle: "Mob Tennis",
           tabBarIcon: ({ color }) => <LiveIcon color={color} />,
         }}
       />

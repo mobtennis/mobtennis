@@ -1,6 +1,6 @@
 export const metadata = {
   title: "Contact",
-  description: "How to reach the people behind Mobtennis.",
+  description: "How to reach the people behind Mob Tennis.",
 };
 
 export default function ContactPage() {
@@ -89,7 +89,7 @@ export default function ContactPage() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Privacy requests</h2>
         <p className="text-sm text-text-secondary">
-          Mobtennis stores follow-state on your own device and doesn&apos;t
+          Mob Tennis stores follow-state on your own device and doesn&apos;t
           maintain user accounts — there&apos;s nothing for us to delete
           server-side. For everything else, see the{" "}
           <a

@@ -19,16 +19,16 @@ export default function TermsPage() {
           >
             mob.tennis
           </a>{" "}
-          and any current or future Mobtennis mobile apps (the
+          and any current or future Mob Tennis mobile apps (the
           &quot;Service&quot;). By using the Service you agree to these
           terms. If you don&apos;t, please don&apos;t use it.
         </p>
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-lg font-semibold">What Mobtennis is</h2>
+        <h2 className="text-lg font-semibold">What Mob Tennis is</h2>
         <p className="text-sm text-text-secondary">
-          Mobtennis is an independent, fan-built tennis information site.
+          Mob Tennis is an independent, fan-built tennis information site.
           We aggregate live scores, draws, news, and highlights from public
           sources, and present them in a fast, clean format. We are not
           affiliated with the ATP, WTA, ITF, or any individual tournament.
@@ -46,7 +46,7 @@ export default function TermsPage() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Accuracy</h2>
         <p className="text-sm text-text-secondary">
-          We do our best to keep data accurate and timely, but Mobtennis is
+          We do our best to keep data accurate and timely, but Mob Tennis is
           an aggregator: live scores can lag, brackets can briefly
           mis-display while upstream sources update, and historical data is
           only as good as our underlying datasets. The Service is provided
@@ -122,7 +122,7 @@ export default function TermsPage() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Liability</h2>
         <p className="text-sm text-text-secondary">
-          To the extent permitted by law, neither Mobtennis nor the Tennis
+          To the extent permitted by law, neither Mob Tennis nor the Tennis
           Association of Iceland is liable for any loss arising from your
           use of the Service. The Service is provided without warranty of
           any kind.

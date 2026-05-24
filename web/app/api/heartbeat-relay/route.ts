@@ -17,7 +17,7 @@
  *
  * Required env (set in Vercel dashboard):
  *   RESEND_API_KEY        — from resend.com/api-keys
- *   RESEND_FROM_EMAIL     — e.g. "Mobtennis Alerts <onboarding@resend.dev>"
+ *   RESEND_FROM_EMAIL     — e.g. "Mob Tennis Alerts <onboarding@resend.dev>"
  *                           (or "alerts@mob.tennis" once the domain is verified)
  *   ALERT_TO_EMAIL        — recipient (must be the verified Resend account
  *                           email until a sending domain is verified)
@@ -62,7 +62,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   if (url.searchParams.get("test") === "1") {
     const r = await sendEmail(
-      "Mobtennis: heartbeat relay test",
+      "Mob Tennis: heartbeat relay test",
       "If you're reading this, Vercel → Resend → your inbox is wired up correctly.",
     );
     if (!r.ok) {
@@ -100,7 +100,7 @@ export async function POST(req: Request) {
     body = `(failed to read body: ${(e as Error).message})`;
   }
 
-  const subject = `Mobtennis heartbeat: ${source} alert`;
+  const subject = `Mob Tennis heartbeat: ${source} alert`;
   const text = `Source: ${source}\nTime: ${new Date().toISOString()}\n\n${body}`;
 
   const r = await sendEmail(subject, text);

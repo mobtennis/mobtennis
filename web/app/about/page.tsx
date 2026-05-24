@@ -1,10 +1,10 @@
-export const metadata = { title: "About Mobtennis" };
+export const metadata = { title: "About Mob Tennis" };
 
 export default function AboutPage() {
   return (
     <article className="space-y-6 pt-2">
       <header>
-        <h1 className="text-2xl font-bold tracking-tight">About Mobtennis</h1>
+        <h1 className="text-2xl font-bold tracking-tight">About Mob Tennis</h1>
         <p className="mt-1 text-sm text-text-secondary">
           Live scores, draws, and tennis news. Built in Iceland; profits go to
           junior tennis here.
@@ -23,7 +23,7 @@ export default function AboutPage() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Who runs it</h2>
         <p className="text-sm text-text-secondary">
-          Mobtennis was built by{" "}
+          Mob Tennis was built by{" "}
           <a
             href="https://claude.com"
             target="_blank"
@@ -37,7 +37,7 @@ export default function AboutPage() {
           the project is about the sport and the cause.
         </p>
         <p className="text-sm text-text-secondary">
-          On the record: profits from Mobtennis flow to the{" "}
+          On the record: profits from Mob Tennis flow to the{" "}
           <strong>Tennis Association of Iceland (TSÍ)</strong>, earmarked for
           junior development. TSÍ administers the funds and handles all press
           and partnership questions.
@@ -47,7 +47,7 @@ export default function AboutPage() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Where the money goes</h2>
         <p className="text-sm text-text-secondary">
-          Mobtennis runs on free hosting tiers, a small live-data subscription,
+          Mob Tennis runs on free hosting tiers, a small live-data subscription,
           and ad impressions. After hosting costs,{" "}
           <strong>
             100% of revenue is routed to TSÍ&apos;s junior development programs

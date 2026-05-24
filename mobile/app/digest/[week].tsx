@@ -61,7 +61,7 @@ export default function DigestWeekScreen() {
             When one is added, swap this for a Link/Pressable wrapper
             matching the web byline. */}
         <Text className="mt-3 text-xs text-text-muted">
-          By the Mobtennis team
+          By the Mob Tennis team
         </Text>
       </View>
 

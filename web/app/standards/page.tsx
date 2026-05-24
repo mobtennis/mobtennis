@@ -1,7 +1,7 @@
 export const metadata = {
   title: "Editorial standards",
   description:
-    "How Mobtennis sources its data, generates its prose, and corrects mistakes.",
+    "How Mob Tennis sources its data, generates its prose, and corrects mistakes.",
 };
 
 export default function StandardsPage() {
@@ -18,7 +18,7 @@ export default function StandardsPage() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Where the data comes from</h2>
         <p className="text-sm text-text-secondary">
-          Mobtennis is built on three sources, each with a specific role:
+          Mob Tennis is built on three sources, each with a specific role:
         </p>
         <ul className="ml-5 list-disc space-y-1 text-sm text-text-secondary">
           <li>
@@ -131,7 +131,7 @@ export default function StandardsPage() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Independence</h2>
         <p className="text-sm text-text-secondary">
-          Mobtennis isn&apos;t affiliated with the ATP, the WTA, the ITF, or
+          Mob Tennis isn&apos;t affiliated with the ATP, the WTA, the ITF, or
           any individual tournament. We don&apos;t accept paid placements,
           sponsored coverage, or affiliate partnerships that would steer
           editorial choices. Advertising on the site is run through

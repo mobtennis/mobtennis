@@ -71,7 +71,7 @@ export default async function DigestWeekPage({
           href="/about"
           className="mt-3 inline-block text-xs text-text-muted underline decoration-dotted underline-offset-4 hover:text-text-secondary"
         >
-          By the Mobtennis team
+          By the Mob Tennis team
         </Link>
       </header>
 

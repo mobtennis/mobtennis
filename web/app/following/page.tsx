@@ -12,7 +12,7 @@ export default function FollowingPage() {
       <header className="text-center">
         <h1 className="text-2xl font-bold tracking-tight">Following lives in the app</h1>
         <p className="mt-2 text-sm text-text-secondary">
-          Mobtennis is faster and more personal on your phone. No account needed.
+          Mob Tennis is faster and more personal on your phone. No account needed.
         </p>
       </header>
       <GetTheAppCard action="follow your favourites" />

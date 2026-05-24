@@ -8,7 +8,7 @@ export default function CreditsScreen() {
       <View className="space-y-4 px-1">
         <Text className="text-2xl font-bold text-text-primary">Credits & data sources</Text>
         <Text className="text-sm text-text-secondary">
-          Mobtennis stands on the shoulders of a few generous data sets.
+          Mob Tennis stands on the shoulders of a few generous data sets.
         </Text>
 
         <Section title="Historical player & match data">

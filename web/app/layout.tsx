@@ -26,11 +26,11 @@ const GOOGLE_ADS_ID =
   process.env.NEXT_PUBLIC_GOOGLE_ADS_ID ?? "AW-18177033731";
 
 export const metadata: Metadata = {
-  title: { default: "Mobtennis — live tennis, your way", template: "%s · Mobtennis" },
+  title: { default: "Mob Tennis — live tennis, your way", template: "%s · Mob Tennis" },
   description:
     "Live ATP & WTA scores, player profiles, tournament draws, head-to-head, news. Fan-first, fast, clean.",
-  applicationName: "Mobtennis",
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Mobtennis" },
+  applicationName: "Mob Tennis",
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Mob Tennis" },
   // AdSense site verification — gives Google an unambiguous signal that
   // this domain belongs to our publisher account, even before the loader
   // script is allowed to run on the page. Keep this even when ads are
