@@ -443,6 +443,29 @@ async def _enrich_tournament_dates_job() -> None:
         log.exception("tournament dates enrich failed")
 
 
+def _reconcile_tournament_dates_job() -> None:
+    """Pull catalog start/end dates into line with observed main-draw
+    match data. Runs AFTER the Wikidata enrichment so observed data
+    overrides stale Wikipedia / static-seed values when they conflict.
+
+    Real-world trigger: Slams switched to a 14-day Sunday-start format
+    in 2024; our static seed (and some Wikipedia 2023 dates) still had
+    Monday starts. With this job, the moment api-tennis publishes the
+    Sunday R128 schedule, the catalog corrects itself within an hour.
+    """
+    from app.services.tournament_dates_reconcile import reconcile_tournament_dates
+    try:
+        with Session(engine) as session:
+            summary = reconcile_tournament_dates(session)
+        if summary["start_updated"] or summary["end_updated"]:
+            log.info(
+                "tournament dates reconcile: %d checked, %d starts, %d ends updated",
+                summary["checked"], summary["start_updated"], summary["end_updated"],
+            )
+    except Exception:
+        log.exception("tournament dates reconcile failed")
+
+
 async def _enrich_player_socials_job() -> None:
     """Wikidata-sourced Instagram / X handles for the top 100 of each tour."""
     try:
@@ -760,6 +783,24 @@ def start_scheduler() -> None:
         coalesce=True,
     )
     # Boot trigger removed — daily cadence is plenty.
+
+    # Tournament dates reconcile — pulls catalog start_date/end_date into
+    # line with observed main-draw match data when they diverge by >2
+    # days. Cheap (single grouped query). Hourly cadence means a Slam
+    # switching to a Sunday-start format gets corrected within an hour
+    # of api-tennis publishing the new draw, no manual update needed.
+    _scheduler.add_job(
+        _reconcile_tournament_dates_job,
+        IntervalTrigger(hours=1),
+        id="reconcile_tournament_dates",
+        max_instances=1,
+        coalesce=True,
+    )
+    _scheduler.add_job(
+        _reconcile_tournament_dates_job,
+        DateTrigger(run_date=datetime.utcnow() + timedelta(seconds=30)),
+        id="reconcile_tournament_dates_boot",
+    )
 
     # Weekly editorial digest. Monday 06:00 UTC — late enough that
     # Sunday's finals have settled in every timezone and the api-tennis
