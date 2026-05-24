@@ -2,6 +2,7 @@ import json
 from datetime import datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import case
 from sqlmodel import Session, select
 
 from app.api._helpers import match_to_summary
@@ -43,9 +44,40 @@ def live_matches(
     # timezone, "today's finished matches" is covered. The client
     # narrows that set to its own local-date window so users don't
     # have to dig into brackets to see a match that ended an hour ago.
+    #
+    # Sort priority (descending importance):
+    #   1. LIVE / SUSPENDED outrank FINISHED. An in-progress 250 match
+    #      still beats a finished Slam from this morning.
+    #   2. Tournament tier (Slam > 1000 > 500 > 250 > Davis > Challenger
+    #      > ITF). The original chronological-only sort buried French
+    #      Open day-1 matches behind Challengers scheduled 10 minutes
+    #      later, because the LIMIT was hit before slams appeared.
+    #   3. scheduled_at desc — within a tier, most recent first.
     finished_cutoff = datetime.utcnow() - timedelta(hours=36)
+    status_priority = case(
+        (Match.status == MatchStatus.LIVE, 0),
+        (Match.status == MatchStatus.SUSPENDED, 1),
+        else_=2,
+    )
+    tier_priority = case(
+        (Tournament.category == TournamentCategory.GRAND_SLAM, 0),
+        (Tournament.category == TournamentCategory.ATP_FINALS, 1),
+        (Tournament.category == TournamentCategory.WTA_FINALS, 1),
+        (Tournament.category == TournamentCategory.ATP_1000, 2),
+        (Tournament.category == TournamentCategory.WTA_1000, 2),
+        (Tournament.category == TournamentCategory.ATP_500, 3),
+        (Tournament.category == TournamentCategory.WTA_500, 3),
+        (Tournament.category == TournamentCategory.ATP_250, 4),
+        (Tournament.category == TournamentCategory.WTA_250, 4),
+        (Tournament.category == TournamentCategory.DAVIS_CUP, 5),
+        (Tournament.category == TournamentCategory.BJK_CUP, 5),
+        (Tournament.category == TournamentCategory.CHALLENGER, 6),
+        (Tournament.category == TournamentCategory.ITF, 7),
+        else_=8,
+    )
     stmt = (
         select(Match)
+        .join(Tournament, Tournament.id == Match.tournament_id)
         .where(
             Match.status.in_([MatchStatus.LIVE, MatchStatus.SUSPENDED])
             | (
@@ -54,7 +86,7 @@ def live_matches(
                 & (Match.scheduled_at >= finished_cutoff)
             )
         )
-        .order_by(Match.scheduled_at.desc())
+        .order_by(status_priority, tier_priority, Match.scheduled_at.desc())
         .limit(limit)
     )
     return [match_to_summary(session, m) for m in session.exec(stmt).all()]
