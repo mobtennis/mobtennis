@@ -280,26 +280,34 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
         if start <= today <= end:
             in_progress_ids.add(tid)
 
-    # (5) "Singles final has been played, AND was >36 h ago" override —
-    # authoritative "done" signal. Same rule as the per-match "today's
-    # finished matches stay visible" treatment: we want a tournament
-    # whose final ended this morning to still appear in the live
-    # section through end-of-day so users can browse the day's
-    # results without digging into the bracket. 36h is generous
+    # (5) "Singles main-draw final has been played, AND was >36 h ago"
+    # override — authoritative "done" signal. Same rule as the per-
+    # match "today's finished matches stay visible" treatment: we want
+    # a tournament whose final ended this morning to still appear in
+    # the live section through end-of-day so users can browse the
+    # day's results without digging into the bracket. 36h is generous
     # enough to cover any client timezone; the client narrows
     # individual matches further to its local today.
     #
+    # ONLY the short-form round code "F" qualifies. Verbose api-tennis
+    # labels like "ATP French Open - Final" also apply to the
+    # QUALIFYING bracket's final (every qualifying group has its own
+    # final), so an ilike("%final") match used to drag a tournament out
+    # of in_progress the moment qualifying ended — i.e. days before
+    # main draw started. The short code "F" comes from our Sackmann +
+    # Wikipedia bracket parser, both of which explicitly distinguish
+    # main draw from qualifying.
+    #
     # MUST filter is_doubles=False. Doubles finals often finish hours
     # earlier on the same day as the singles final and share the round
-    # label ("ATP Rome - Final"); without this filter Rome dropped out
-    # of "live" the moment its doubles final ended, even while singles
-    # was mid-set.
+    # label; without this filter Rome dropped out of "live" the moment
+    # its doubles final ended, even while singles was mid-set.
     recent_final_cutoff = datetime.utcnow() - timedelta(hours=36)
     finished_finals = session.exec(
         select(Match.tournament_id).distinct()
         .where(Match.status == MatchStatus.FINISHED)
         .where(Match.is_doubles == False)  # noqa: E712 — SQLAlchemy expr
-        .where((Match.round == "F") | Match.round.ilike("%final"))
+        .where(Match.round == "F")
         .where(func.coalesce(Match.finished_at, Match.scheduled_at) < recent_final_cutoff)
     ).all()
     in_progress_ids -= set(finished_finals)
