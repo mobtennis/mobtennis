@@ -255,11 +255,18 @@ def player_snapshot(slug: str, session: Session = Depends(get_session)) -> Playe
             if idx < RECENT_WINDOW:
                 recent_losses += 1
 
-        # Final detection: round string ends with "final" (case-insensitive)
-        # or equals "F". Both Wikipedia-shape ("F") and api-tennis-shape
-        # ("... - Final") are caught.
-        round_str = (m.round or "").lower().strip().rstrip("s")
-        is_final = round_str.endswith("final") or round_str == "f"
+        # Main-draw-final detection: ONLY the short code "F" from
+        # Sackmann + Wikipedia bracket parsing. We deliberately do NOT
+        # match verbose api-tennis labels like "ATP French Open - Final",
+        # because those are reused for QUALIFYING-bracket finals (every
+        # qualifying group has its own final). Matching them inflated
+        # career_titles/slam_titles across ~210 players and produced the
+        # absurd "Safiullin won the 2026 French Open" claim. Same pattern
+        # we've now had to fix in api/tournaments.py (live-section
+        # "tournament done" override) and services/tournament_dates_
+        # reconcile.py (start/end-date inference) — short-form codes are
+        # the only labels that distinguish main draw from qualifying.
+        is_final = m.round == "F"
         if is_final and t is not None and m.winner_id is not None:
             finals_count += 1
             opp = opponents.get(opp_id) if opp_id is not None else None

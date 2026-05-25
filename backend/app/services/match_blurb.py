@@ -78,11 +78,12 @@ def compute_h2h_context(
     p1_wins = sum(1 for m in matches if m.winner_id == p1.id)
     p2_wins = sum(1 for m in matches if m.winner_id == p2.id)
 
-    finals = sum(
-        1 for m in matches
-        if (m.round or "").lower().strip().rstrip("s").endswith("final")
-        or (m.round or "").strip().upper() == "F"
-    )
+    # Main-draw final only — short code "F" from Sackmann/Wikipedia.
+    # See api/players.py snapshot for the why (qualifying-bracket
+    # finals share the verbose api-tennis label and we don't want
+    # match blurbs claiming a head-to-head "has met in 3 finals" when
+    # those were qualifying-bracket finals).
+    finals = sum(1 for m in matches if m.round == "F")
 
     streak_id: int | None = None
     streak_count = 0

@@ -141,14 +141,13 @@ def _build_summary(
     if last_meeting and first_meeting and last_meeting.year != first_meeting.year:
         span = last_meeting.year - first_meeting.year
 
-    # "Final" = round string ends with "final" / equals "F" / is api-tennis's
-    # "...- Final". The same set we use for is-this-the-tournament-final
-    # checks elsewhere.
-    finals_meetings = sum(
-        1 for m in matches
-        if (m.round or "").lower().strip().rstrip("s").endswith("final")
-        or (m.round or "").strip().upper() == "F"
-    )
+    # Main-draw final count = ONLY the short code "F" from Sackmann +
+    # Wikipedia. We deliberately do NOT match verbose api-tennis labels
+    # like "ATP French Open - Final" because those also tag the
+    # qualifying-bracket final, and counting two players' qualifying-
+    # bracket meeting as "they met in a Slam Final" is absurd. See
+    # api/players.py snapshot logic for the longer explanation.
+    finals_meetings = sum(1 for m in matches if m.round == "F")
 
     # Current streak: walk from most recent until the winner changes.
     streak_slug: str | None = None
