@@ -807,15 +807,35 @@ def tournament_matches_current(
     tour: Tour,
     slug: str,
     status: str | None = None,
-    limit: int = Query(200, ge=1, le=500),
+    limit: int = Query(400, ge=1, le=1000),
     session: Session = Depends(get_session),
 ):
     """Matches for the current edition. Same resolution rules as the
-    year-less detail endpoint above."""
+    year-less detail endpoint above.
+
+    Qualifying-bracket rounds are filtered out at the SQL level. They
+    add ~110 rows to a Slam payload and the only consumer (the
+    bracket / matches list) doesn't render them — but they squeeze
+    real main-draw matches past the limit cap, producing phantom
+    TBD slots on the bracket. api-tennis labels qualifying brackets
+    with verbose forms like "ATP French Open - Quarter-finals" / "...
+    - Semi-finals" / "... - Final", which is also why we can't use
+    the round depth to filter — we filter by string pattern instead.
+    """
     t = _resolve_current_edition(session, tour, slug)
     if not t:
         raise HTTPException(404, "Tournament not found")
-    stmt = select(Match).where(Match.tournament_id == t.id)
+    stmt = (
+        select(Match)
+        .where(Match.tournament_id == t.id)
+        # Exclude qualifying-bracket rounds (verbose api-tennis
+        # nomenclature). These have a "<Tour name> - <Round>" prefix
+        # before "Quarter-finals" / "Semi-finals" / "Final" /
+        # "1/64-finals" etc. Short-code rounds (F/SF/QF/R128/...) from
+        # Wikipedia + Sackmann don't start with that prefix and pass
+        # through.
+        .where(~Match.round.contains(" - "))
+    )
     if status:
         from app.api._helpers import filter_status
         stmt = filter_status(stmt, status)
