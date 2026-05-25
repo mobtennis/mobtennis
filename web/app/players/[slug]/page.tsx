@@ -56,10 +56,13 @@ export default async function PlayerPage({ params }: { params: Promise<{ slug: s
     api<NewsItemSummary[]>(`/api/news?player_slug=${slug}&limit=10`).catch(() => []),
     api<VideoItemSummary[]>(`/api/videos?player_slug=${slug}&limit=10`).catch(() => []),
     api<TournamentHistoryEntry[]>(`/api/players/${slug}/tournament-history?limit=5`).catch(() => []),
-    // Career snapshot changes only when finished matches land — caching
-    // for an hour is plenty and saves a non-trivial DB scan on every
-    // visit (we read all of the player's finished matches to compute it).
-    api<PlayerSnapshot>(`/api/players/${slug}/snapshot`, { revalidate: 3600 }).catch(() => null),
+    // Career snapshot changes only when finished matches land, but data
+    // corrections (mislabeled qualifying matches, ingestion fixes) need
+    // to propagate without a full ISR window. 10 min is a sensible
+    // middle ground — cheap enough that the DB scan isn't a load
+    // concern, fresh enough that wrong claims don't stick for an hour
+    // after a fix ships.
+    api<PlayerSnapshot>(`/api/players/${slug}/snapshot`, { revalidate: 600 }).catch(() => null),
   ]);
   const feed = mergeFeed(news, videos);
 
