@@ -104,6 +104,30 @@ export function formatTime(iso: string | null): string {
   return parseUtcIso(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/** Mirror of web/lib/format.ts formatMatchTime — relative-day prefix +
+ * time for upcoming matches. "Today 18:00" / "Tomorrow 18:00" /
+ * "Wed 18:00" / "Wed 27 May 18:00". Keeps web and mobile cards
+ * reading identically. */
+export function formatMatchTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = parseUtcIso(iso);
+  const now = new Date();
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const diffDays = Math.round(
+    (startOfDay(d).getTime() - startOfDay(now).getTime()) / 86_400_000,
+  );
+  if (diffDays === 0) return `Today ${time}`;
+  if (diffDays === 1) return `Tomorrow ${time}`;
+  if (diffDays === -1) return `Yesterday ${time}`;
+  if (diffDays > 1 && diffDays < 7) {
+    const dow = d.toLocaleDateString([], { weekday: "short" });
+    return `${dow} ${time}`;
+  }
+  const date = d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  return `${date} ${time}`;
+}
+
 export function formatDate(iso: string | null): string {
   if (!iso) return "";
   return parseUtcIso(iso).toLocaleDateString([], { month: "short", day: "numeric" });

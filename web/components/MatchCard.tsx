@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import type { MatchSummary } from "@/lib/api";
-import { formatRound, formatScore, formatSetScore, formatTime } from "@/lib/format";
+import { formatMatchTime, formatRound, formatScore, formatSetScore } from "@/lib/format";
 import { LiveDot, SuspendedDot } from "@/components/LiveDot";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 
@@ -54,7 +54,12 @@ export function MatchCard({ match, dense = false }: { match: MatchSummary; dense
             <SuspendedDot />
           ) : !finished ? (
             // Finished matches show no status label — the score makes it obvious.
-            <span className="text-xs tnum text-text-secondary">{formatTime(match.scheduled_at)}</span>
+            // Scheduled matches show a relative-date + time stamp so users can
+            // tell "tonight" from "Wednesday" at a glance. Empty when api-tennis
+            // hasn't published the time yet (NULL scheduled_at).
+            <span className="text-xs tnum text-text-secondary">
+              {formatMatchTime(match.scheduled_at) || "TBD"}
+            </span>
           ) : null}
           {/* Tour pill — sits between status and round labels in the
               meta column. Decorative only; the surrounding <Link>

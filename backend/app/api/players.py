@@ -89,24 +89,74 @@ def player_matches(
     p = session.exec(select(Player).where(Player.slug == slug)).first()
     if not p:
         raise HTTPException(404, "Player not found")
-    stmt = select(Match).where((Match.player1_id == p.id) | (Match.player2_id == p.id))
+    base = (Match.player1_id == p.id) | (Match.player2_id == p.id)
+    status_filter = None
     if status:
         from app.api._helpers import filter_status
-        stmt = filter_status(stmt, status)
-    rows = session.exec(stmt.order_by(Match.scheduled_at.desc()).limit(limit * 4)).all()
-    # Within a tournament all matches share scheduled_at (Sackmann pins it
-    # to the tournament start), so SQL tie-break is undefined. Re-sort in
-    # Python by (scheduled_at, round_depth) descending so the deepest round
-    # — the player's most recent match — sits at the top of each group.
-    from datetime import datetime as _dt
+        # filter_status is a query-decorator; we use it as a where-clause
+        # extractor here by building a tmp stmt, but the simpler thing
+        # is to just inline the SCHEDULED/LIVE case below since that's
+        # the only one that matters for the NULL-fallback path.
+        status_filter = status
 
+    # Query A: matches with a real scheduled_at. SQL ORDER BY is reliable
+    # here, so we cap to a modest buffer.
+    stmt_a = select(Match).where(base, Match.scheduled_at.is_not(None))
+    if status_filter:
+        from app.api._helpers import filter_status
+        stmt_a = filter_status(stmt_a, status_filter)
+    rows_dated = session.exec(
+        stmt_a.order_by(Match.scheduled_at.desc()).limit(limit * 4)
+    ).all()
+
+    # Query B: matches with NULL scheduled_at that should still be
+    # surfaced — upcoming draws where api-tennis published the bracket
+    # but hasn't pushed per-match times yet. Bounded to SCHEDULED + LIVE
+    # so we don't drag in pre-historic Sackmann rows with missing dates.
+    stmt_b = select(Match).where(
+        base,
+        Match.scheduled_at.is_(None),
+        Match.status.in_([MatchStatus.SCHEDULED, MatchStatus.LIVE]),
+    )
+    if status_filter:
+        from app.api._helpers import filter_status
+        stmt_b = filter_status(stmt_b, status_filter)
+    rows_undated = session.exec(stmt_b).all()
+
+    # Within a tournament all matches share scheduled_at (Sackmann pins
+    # it to the tournament start), so SQL tie-break is undefined. Re-sort
+    # in Python by (sort_at, round_depth) descending so the deepest round
+    # — the player's most recent match — sits at the top of each group.
+    # For NULL-scheduled upcoming matches we substitute the tournament's
+    # start_date, which puts those rows in the right week-bucket relative
+    # to history with real timestamps.
+    from datetime import date as _date, datetime as _dt, time as _time
+
+    from app.models.tournament import Tournament
     from app.services.rounds import round_depth
 
-    rows.sort(
-        key=lambda m: (m.scheduled_at or _dt.min, round_depth(m.round)),
+    all_rows = list(rows_dated) + list(rows_undated)
+    tournament_starts: dict[int, _date] = dict(
+        session.exec(
+            select(Tournament.id, Tournament.start_date)
+            .where(Tournament.id.in_({m.tournament_id for m in all_rows if m.tournament_id}))
+            .where(Tournament.start_date.is_not(None))
+        ).all()
+    )
+
+    def _sort_at(m) -> _dt:
+        if m.scheduled_at is not None:
+            return m.scheduled_at
+        ts = tournament_starts.get(m.tournament_id)
+        if ts is not None:
+            return _dt.combine(ts, _time.min)
+        return _dt.min
+
+    all_rows.sort(
+        key=lambda m: (_sort_at(m), round_depth(m.round)),
         reverse=True,
     )
-    return [match_to_summary(session, m) for m in rows[:limit]]
+    return [match_to_summary(session, m) for m in all_rows[:limit]]
 
 
 @router.get("/{slug}/snapshot", response_model=PlayerSnapshot)

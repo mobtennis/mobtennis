@@ -5,7 +5,7 @@ import Svg, { Path } from "react-native-svg";
 import { LiveDot, SuspendedDot } from "@/components/LiveDot";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import type { MatchSummary, PlayerSummary } from "@/lib/api";
-import { formatRound, formatScore, formatSetScore, formatTime } from "@/lib/format";
+import { formatMatchTime, formatRound, formatScore, formatSetScore } from "@/lib/format";
 
 export function MatchCard({ match }: { match: MatchSummary }) {
   const sets = formatScore(match.score);
@@ -50,7 +50,11 @@ export function MatchCard({ match }: { match: MatchSummary }) {
             <SuspendedDot />
           ) : !finished ? (
             // Finished matches show no status label — the score makes it obvious.
-            <Text className="text-xs text-text-secondary">{formatTime(match.scheduled_at)}</Text>
+            // Relative-day + time: "Today 18:00" / "Tomorrow 18:00" / "Wed 18:00".
+            // "TBD" when api-tennis hasn't pushed the time yet (NULL scheduled_at).
+            <Text className="text-xs text-text-secondary">
+              {formatMatchTime(match.scheduled_at) || "TBD"}
+            </Text>
           ) : null}
           {round && (
             <Text className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">

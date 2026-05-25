@@ -111,6 +111,40 @@ export function formatTime(iso: string | null): string {
   return parseUtcIso(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/**
+ * Relative-date + time for upcoming matches. Returns "Today 18:00",
+ * "Tomorrow 18:00", "Wed 18:00" (within the next 6 days), or
+ * "Wed 27 May 18:00" beyond that. Empty string when iso is null
+ * (api-tennis sometimes ships the draw before the schedule).
+ *
+ * Why we don't just show "18:00" alone: users complained Sinner's
+ * upcoming match read identically whether it was tonight or three
+ * days out. The relative prefix collapses that ambiguity for the
+ * vast majority of cases (matches within ~a week) without forcing
+ * a full date stamp on every card.
+ */
+export function formatMatchTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = parseUtcIso(iso);
+  const now = new Date();
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // Day-bucket math in the user's local timezone.
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const diffDays = Math.round(
+    (startOfDay(d).getTime() - startOfDay(now).getTime()) / 86_400_000,
+  );
+  if (diffDays === 0) return `Today ${time}`;
+  if (diffDays === 1) return `Tomorrow ${time}`;
+  if (diffDays === -1) return `Yesterday ${time}`;
+  if (diffDays > 1 && diffDays < 7) {
+    const dow = d.toLocaleDateString([], { weekday: "short" });
+    return `${dow} ${time}`;
+  }
+  // Anything further out (or in the past) — full short date + time.
+  const date = d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  return `${date} ${time}`;
+}
+
 export function formatDate(iso: string | null): string {
   if (!iso) return "";
   return parseUtcIso(iso).toLocaleDateString([], { month: "short", day: "numeric" });
