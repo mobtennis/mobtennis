@@ -560,11 +560,19 @@ def tournament_overview(tour: Tour, slug: str, session: Session = Depends(get_se
             player_cache[pid] = session.get(Player, pid)
         return player_cache[pid]
 
-    # ---- Last edition (most recent year with a Final) ----
+    # ---- Last edition (most recent year with a main-draw Final) ----
+    # ONLY the short code "F" qualifies. round_depth >= 100 also matches
+    # verbose api-tennis labels like "ATP French Open - Final" via the
+    # _strip_prefix helper, which means qualifying-bracket finals would
+    # outrank the actual main-draw final and we'd claim the wrong player
+    # as champion (e.g. "Roland Garros 2026 won by Andrea Pellegrino" —
+    # an RG qualifier who never made the main draw R128). When the
+    # current year has no main-draw F yet (Slam still in progress), the
+    # loop falls through to the most recent finished year.
     last_edition: LastEdition | None = None
     for t in instances:
         tmatches = matches_by_tid.get(t.id, [])
-        finals = [m for m in tmatches if round_depth(m.round) >= 100]
+        finals = [m for m in tmatches if m.round == "F"]
         if not finals:
             continue
         f = max(finals, key=lambda m: round_depth(m.round))
@@ -595,7 +603,10 @@ def tournament_overview(tour: Tour, slug: str, session: Session = Depends(get_se
             apps_by_player[m.player1_id].add(year)
         if m.player2_id:
             apps_by_player[m.player2_id].add(year)
-        if round_depth(m.round) >= 100 and m.winner_id is not None:
+        # Main-draw final only — short code "F" from Sackmann/Wikipedia.
+        # See last_edition comment above for why verbose labels are
+        # rejected.
+        if m.round == "F" and m.winner_id is not None:
             titles_by_player[m.winner_id].add(year)
 
     records: list[TournamentRecord] = []
@@ -683,8 +694,10 @@ def tournament_overview(tour: Tour, slug: str, session: Session = Depends(get_se
             records.append(rec)
 
     # ---- Stats ----
+    # Main-draw F only (short code) — same reasoning as last_edition /
+    # titles_by_player above.
     tids_with_finals = {
-        m.tournament_id for m in matches if round_depth(m.round) >= 100
+        m.tournament_id for m in matches if m.round == "F"
     }
     tids_with_data = set(matches_by_tid.keys())
     years_with_data = [year_by_tid[tid] for tid in tids if tid in tids_with_data]

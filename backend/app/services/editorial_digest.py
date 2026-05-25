@@ -269,7 +269,12 @@ def collect_week_facts(session: Session, week_start: date) -> dict:
 
     for m in week_matches:
         normalized = _normalize_round(m.round)
-        is_final = normalized == "F"
+        # Main-draw final only — short code "F" from Sackmann + Wikipedia.
+        # _normalize_round would collapse "ATP French Open - Final" (a
+        # qualifying-bracket final at api-tennis) to "F", which would
+        # have produced 16 spurious "RG final" entries in the digest's
+        # facts during qualifying weeks.
+        is_final = m.round == "F"
         t = _t(m.tournament_id)
         if not t:
             continue
