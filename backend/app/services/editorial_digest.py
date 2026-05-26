@@ -95,20 +95,17 @@ def _strip_html(s: str | None) -> str:
     return out[:280]  # cap each summary so the prompt doesn't bloat
 
 
-def _collect_news(session: Session, week_start: date, week_end: date) -> list[dict]:
-    """News headlines + summaries from the past 7 days.
+def _collect_news(session: Session, start_dt: datetime, end_dt: datetime) -> list[dict]:
+    """News headlines + summaries in [start_dt, end_dt].
 
     Returns shape: [{source, published_at, title, summary}, ...], most
-    recent first, capped at _NEWS_CAP. Past-week window is broad enough
-    to catch storylines that broke mid-week before the digest fires;
-    same-week-only would miss the Tuesday news drops by the time the
-    Monday-of-next-week cron runs.
+    recent first, capped at _NEWS_CAP. The window is whatever the
+    caller passes — typically the digest's `[period_start, period_end]`
+    so an ad-hoc Wednesday digest only covers news since the last one.
 
     Off-court news (withdrawals, injuries, retirements, scandals) lives
     here — none of that is reachable from the match table.
     """
-    start_dt = datetime.combine(week_start, time.min)
-    end_dt = datetime.combine(week_end, time.max)
     rows = session.exec(
         select(NewsItem)
         .where(
@@ -213,16 +210,18 @@ class _Upset:
     loser_rank: int
 
 
-def collect_week_facts(session: Session, week_start: date) -> dict:
-    """Pull every fact for the week into a JSON-serialisable dict.
+def collect_period_facts(
+    session: Session, period_start: datetime, period_end: datetime,
+) -> dict:
+    """Pull every fact for the [period_start, period_end] window into a
+    JSON-serialisable dict.
 
-    Returned shape is what gets fed into the prompt verbatim. We dataclass
-    the rows internally for type safety, then `_to_dict` them at the end
-    so the prompt builder can format them with simple dict access.
+    Window is arbitrary — a Monday cron typically passes a full week,
+    an ad-hoc Wednesday call passes "since last digest" (could be a
+    couple of days). The prompt downstream adapts to the actual length.
     """
-    week_end = week_start + timedelta(days=6)
-    start_dt = datetime.combine(week_start, time.min)
-    end_dt = datetime.combine(week_end, time.max)
+    start_dt = period_start
+    end_dt = period_end
 
     # Lookup tables keyed by id — built once, used for every match row.
     tournaments = {
@@ -396,22 +395,35 @@ def collect_week_facts(session: Session, week_start: date) -> dict:
     ))
 
     payload = {
-        "week_start": week_start.isoformat(),
-        "week_end": week_end.isoformat(),
+        # ISO timestamps so the prompt can phrase the window precisely
+        # (e.g. "since Tuesday morning" for a Wed mid-week digest).
+        "period_start": period_start.isoformat(timespec="minutes"),
+        "period_end": period_end.isoformat(timespec="minutes"),
+        # Anchor date for URL slug — derived in the caller; kept as a
+        # convenience field on the facts.
+        "anchor_date": period_end.date().isoformat(),
         "finals": [_final_to_dict(f) for f in finals],
         "lower_tier_finals": [_final_to_dict(f) for f in lower_finals],
         "upsets": [_upset_to_dict(u) for u in upsets[:6]],  # cap noise
         "ongoing": ongoing,
-        # Headlines + summaries from our news feed for the same week.
+        # Headlines + summaries from our news feed for the same window.
         # Off-court stories (withdrawals, injuries, retirements,
         # protests) live here — invisible to the match-table.
-        "news": _collect_news(session, week_start, week_end),
+        "news": _collect_news(session, period_start, period_end),
     }
     # LINKS table: every internal URL the model is allowed to reference,
     # keyed by the prose label we want shown. Persisted in source_json so
     # an audit run can reconstruct what the model was offered.
     payload["links"] = _collect_links_table(payload)
     return payload
+
+
+# Backwards-compat shim: a few scripts still call collect_week_facts
+# with a Monday date. Translate to the new period-based API.
+def collect_week_facts(session: Session, week_start: date) -> dict:
+    period_start = datetime.combine(week_start, time.min)
+    period_end = datetime.combine(week_start + timedelta(days=6), time.max)
+    return collect_period_facts(session, period_start, period_end)
 
 
 def _final_to_dict(f: _Final) -> dict:
@@ -596,8 +608,13 @@ def _build_user_prompt(facts: dict) -> str:
             + f"): {f['champion']}{ru}{score}"
         )
 
+    # Period heading: prefer the explicit window, fall back to the
+    # legacy week_start/week_end keys for pre-windowed source_json
+    # rows we might rerun the prompt against.
+    ps = facts.get("period_start") or facts.get("week_start")
+    pe = facts.get("period_end") or facts.get("week_end")
     lines = [
-        f"Week: {facts['week_start']} to {facts['week_end']}.",
+        f"Coverage window: {ps} to {pe}.",
         "",
         "Finals (PRIMARY — Slams, 1000s, 500s, year-end Finals):",
     ]
@@ -820,7 +837,8 @@ def _call_claude(facts: dict) -> tuple[str, str, list[dict]] | None:
             messages=[{"role": "user", "content": user_prompt}],
         )
     except Exception:
-        log.exception("Claude call failed for week %s", facts.get("week_start"))
+        log.exception("Claude call failed for window %s",
+                      facts.get("anchor_date") or facts.get("week_start"))
         return None
 
     # Tool-use response: walk content blocks for the tool_use block we
@@ -843,7 +861,9 @@ def _call_claude(facts: dict) -> tuple[str, str, list[dict]] | None:
                     u = entry.get("url")
                     if u:
                         allowed.add(u)
-            digest_url = f"/digest/{facts.get('week_start', '')}"
+            digest_url = (
+                f"/digest/{facts.get('anchor_date') or facts.get('week_start', '')}"
+            )
             allowed.add(digest_url)
             briefs = _validate_campaign_briefs(
                 briefs_raw,
@@ -852,7 +872,10 @@ def _call_claude(facts: dict) -> tuple[str, str, list[dict]] | None:
             )
             if headline and body:
                 return headline, body, briefs
-    log.warning("Claude returned no usable tool_use block for week %s", facts["week_start"])
+    log.warning(
+        "Claude returned no usable tool_use block for window %s",
+        facts.get("anchor_date") or facts.get("week_start"),
+    )
     return None
 
 
@@ -978,35 +1001,124 @@ def sanitize_body_links(body: str, links: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
+# Minimum interval between generations. Lower values cost LLM calls
+# without much new editorial content; this matches the user-stated
+# rate-limit ("If called within 24 hours then feel free to respond
+# with — we already have a digest").
+_MIN_REGEN_INTERVAL = timedelta(hours=24)
+
+# Default lookback when no previous digest exists. Roughly the "weekly"
+# behaviour we want for the first-ever run.
+_DEFAULT_LOOKBACK = timedelta(days=7)
+
+
+class DigestResult:
+    """Lightweight wrapper to communicate why generate_digest returned
+    what it did. The caller (cron / CLI / admin endpoint) can branch on
+    this to log appropriately or show a "wait N hours" message."""
+    def __init__(
+        self,
+        row: EditorialDigest | None,
+        *,
+        status: str,
+        message: str = "",
+    ):
+        self.row = row
+        self.status = status  # 'created' | 'skipped_rate_limited' | 'skipped_no_facts' | 'failed'
+        self.message = message
+
+    def __bool__(self) -> bool:
+        return self.row is not None
+
+
 def generate_digest(
     session: Session,
-    week_start: date,
     *,
     force: bool = False,
     editorial_notes: list[str] | None = None,
-) -> EditorialDigest | None:
-    """Top-level entry: collect facts, call Claude, persist row.
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
+    anchor_date: date | None = None,
+) -> DigestResult:
+    """Top-level entry: collect facts since the last digest, call Claude,
+    persist a new row.
 
-    `editorial_notes` is an optional list of verified human-supplied
-    facts to weave into the recap — milestones, records, retirements,
-    or anything the underlying match data can't tell the model on its
-    own. Passed verbatim to the prompt as "EDITORIAL NOTES" and stored
-    in `source_json` for audit.
+    Defaults — what the Monday cron + ad-hoc admin trigger both use:
+      - `period_end` = now
+      - `period_start` = last digest's period_end (or 7 days ago for the
+        first-ever digest)
+      - `anchor_date` = today (URL slug)
 
-    Returns the saved row, or the existing row if `force=False` and one
-    already exists for the week, or None on LLM failure / empty week.
+    Override `period_start` / `period_end` for backfill of historical
+    weeks where you want a specific window. Use `editorial_notes` for
+    verified human-supplied facts (milestones, retirements, etc.).
+
+    Rate limit: refuses to generate when the last digest was published
+    within `_MIN_REGEN_INTERVAL` (24h) — unless `force=True`. The
+    caller decides whether to alert the user that they need to wait.
     """
-    week_start = monday_of(week_start)
-
-    existing = session.exec(
-        select(EditorialDigest).where(EditorialDigest.week_start == week_start)
+    now = datetime.utcnow()
+    last = session.exec(
+        select(EditorialDigest).order_by(EditorialDigest.generated_at.desc()).limit(1)
     ).first()
-    if existing and not force:
-        return existing
 
-    facts = collect_week_facts(session, week_start)
+    # 24h rate-limit gate. Force=True is the escape hatch for re-runs
+    # of an already-published digest (prompt iteration, data fix, etc.).
+    if last is not None and not force:
+        age = now - last.generated_at
+        if age < _MIN_REGEN_INTERVAL:
+            hours = _MIN_REGEN_INTERVAL - age
+            log.info(
+                "digest rate-limit: last digest %s is %s old (< 24h), skipping",
+                last.week_start, age,
+            )
+            return DigestResult(
+                last,
+                status="skipped_rate_limited",
+                message=(
+                    f"A digest was generated {age.total_seconds() // 3600:.0f}h ago. "
+                    f"Try again in {hours.total_seconds() // 3600:.0f}h or pass force=True."
+                ),
+            )
+
+    # Compute the coverage window. The natural sliding window: from
+    # last digest's period_end to now.
+    if period_end is None:
+        period_end = now
+    if period_start is None:
+        if last is not None and last.period_end is not None:
+            period_start = last.period_end
+        elif last is not None:
+            # Legacy row without period_end — use its anchor + 7 days.
+            period_start = datetime.combine(last.week_start, time.min) + timedelta(days=7)
+        else:
+            period_start = period_end - _DEFAULT_LOOKBACK
+    if anchor_date is None:
+        anchor_date = period_end.date()
+
+    # Anchor uniqueness check: if a digest already exists at this
+    # date and not force, return it (handles same-day re-runs that
+    # somehow slipped past the rate limit, e.g. an admin generation
+    # at 00:01 UTC after a Mon cron at 06:00 UTC on a different day —
+    # rare but cheap to defend against).
+    same_anchor = session.exec(
+        select(EditorialDigest).where(EditorialDigest.week_start == anchor_date)
+    ).first()
+    if same_anchor and not force:
+        return DigestResult(
+            same_anchor,
+            status="skipped_rate_limited",
+            message=f"A digest already exists for {anchor_date}; pass force=True to overwrite.",
+        )
+
+    facts = collect_period_facts(session, period_start, period_end)
+    # Carry forward editorial_notes from the previous digest IF the
+    # caller didn't supply any AND we're in the same coverage window
+    # (caller is regenerating an existing recap with force=True).
+    # Otherwise notes are one-time-per-recap context.
     if editorial_notes:
         facts["editorial_notes"] = list(editorial_notes)
+
     if (
         not facts["finals"]
         and not facts.get("lower_tier_finals")
@@ -1015,30 +1127,43 @@ def generate_digest(
         and not facts.get("editorial_notes")
         and not facts.get("news")
     ):
-        log.info("No newsworthy facts for week %s — skipping", week_start)
-        return None
+        log.info(
+            "No newsworthy facts for window %s → %s — skipping",
+            period_start, period_end,
+        )
+        return DigestResult(
+            None, status="skipped_no_facts",
+            message="No newsworthy facts in the window.",
+        )
 
     result = _call_claude(facts)
     if result is None:
-        return None
+        return DigestResult(
+            None, status="failed",
+            message="LLM call failed or returned no usable response.",
+        )
     headline, body, campaign_briefs = result
     body = sanitize_body_links(body, facts.get("links", {}))
     briefs_blob = json.dumps(campaign_briefs) if campaign_briefs else None
 
-    if existing and force:
-        existing.headline = headline
-        existing.body_md = body
-        existing.source_json = json.dumps(facts)
-        existing.campaign_briefs_json = briefs_blob
-        existing.model_name = MODEL_NAME
-        existing.generated_at = datetime.utcnow()
-        session.add(existing)
+    if same_anchor and force:
+        same_anchor.headline = headline
+        same_anchor.body_md = body
+        same_anchor.source_json = json.dumps(facts)
+        same_anchor.campaign_briefs_json = briefs_blob
+        same_anchor.model_name = MODEL_NAME
+        same_anchor.period_start = period_start
+        same_anchor.period_end = period_end
+        same_anchor.generated_at = now
+        session.add(same_anchor)
         session.commit()
-        session.refresh(existing)
-        return existing
+        session.refresh(same_anchor)
+        return DigestResult(same_anchor, status="created")
 
     row = EditorialDigest(
-        week_start=week_start,
+        week_start=anchor_date,
+        period_start=period_start,
+        period_end=period_end,
         headline=headline,
         body_md=body,
         source_json=json.dumps(facts),
@@ -1048,4 +1173,30 @@ def generate_digest(
     session.add(row)
     session.commit()
     session.refresh(row)
-    return row
+    return DigestResult(row, status="created")
+
+
+# Backwards-compat shim: the backfill script + scheduler used to pass
+# a week_start date. Translate to the new period-based API.
+def generate_digest_for_week(
+    session: Session,
+    week_start: date,
+    *,
+    force: bool = False,
+    editorial_notes: list[str] | None = None,
+) -> EditorialDigest | None:
+    """Generate (or return existing) a digest for a specific ISO week.
+    Convenience wrapper used by the backfill script. New code should
+    call `generate_digest()` directly without a week argument."""
+    week_start = monday_of(week_start)
+    period_start = datetime.combine(week_start, time.min)
+    period_end = datetime.combine(week_start + timedelta(days=6), time.max)
+    result = generate_digest(
+        session,
+        force=force,
+        editorial_notes=editorial_notes,
+        period_start=period_start,
+        period_end=period_end,
+        anchor_date=week_start,
+    )
+    return result.row

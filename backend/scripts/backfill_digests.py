@@ -19,7 +19,7 @@ from datetime import date, timedelta
 from sqlmodel import Session
 
 from app.db.session import engine, init_db
-from app.services.editorial_digest import generate_digest, monday_of
+from app.services.editorial_digest import generate_digest_for_week, monday_of
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("backfill_digests")
@@ -74,7 +74,7 @@ def main() -> None:
             if monday >= monday_of(today):
                 continue
             try:
-                row = generate_digest(session, monday, force=args.force)
+                row = generate_digest_for_week(session, monday, force=args.force)
                 if row is None:
                     skipped += 1
                     log.info("week %s: skipped (no data or LLM unavailable)", monday)

@@ -591,21 +591,28 @@ def _sweep_stuck_matches_job() -> None:
 
 
 async def _generate_weekly_digest_job() -> None:
-    """Generates the editorial digest for the week that just ended.
+    """Generates the editorial digest for whatever's happened since the
+    last one. Cron runs Mon 06:00 UTC, which means the natural sliding
+    window catches the previous week's worth of news + match results.
 
-    Runs Monday 06:00 UTC — by then Sunday's finals have settled in
-    every timezone and the api-tennis backfill has reconciled. The
-    service is idempotent on (week_start), so a re-run from the cron
-    after a manual backfill is a no-op.
+    The service is rate-limited (24h gate) and self-windowing, so it's
+    safe to call any time — a Monday run that comes shortly after an
+    ad-hoc Wednesday digest will be politely refused as "too soon".
     """
     try:
-        last_monday = monday_of(date.today()) - timedelta(days=7)
         with Session(engine) as session:
-            row = generate_digest(session, last_monday)
-            if row:
-                log.info("editorial digest written for week %s", last_monday)
+            # No force=True — the 24h rate-limit is intentional. If
+            # an ad-hoc digest fired in the last day, this Mon cron
+            # correctly skips.
+            result = generate_digest(session)
+            if result.status == "created":
+                log.info("editorial digest created (%s)", result.row.week_start)
+            elif result.status == "skipped_rate_limited":
+                log.info("editorial digest skipped: %s", result.message)
+            elif result.status == "skipped_no_facts":
+                log.info("editorial digest skipped: %s", result.message)
             else:
-                log.info("editorial digest skipped for week %s", last_monday)
+                log.warning("editorial digest %s: %s", result.status, result.message)
     except Exception:
         log.exception("editorial digest job failed")
 

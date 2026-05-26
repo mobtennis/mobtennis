@@ -22,12 +22,14 @@ import os
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.db.session import get_session
 from app.models.digest import EditorialDigest
 from app.schemas.digest import CampaignBrief, CampaignBriefsResponse
+from app.services.editorial_digest import generate_digest
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -89,4 +91,50 @@ def _to_briefs_response(row: EditorialDigest) -> CampaignBriefsResponse:
         headline=row.headline,
         generated_at=row.generated_at,
         briefs=briefs,
+    )
+
+
+class GenerateDigestBody(BaseModel):
+    """Body for the ad-hoc-digest endpoint. Both fields optional."""
+    force: bool = False  # bypass the 24h rate-limit gate
+    notes: list[str] = []  # verified human-supplied facts to weave in
+
+
+class GenerateDigestResponse(BaseModel):
+    status: str  # 'created' | 'skipped_rate_limited' | 'skipped_no_facts' | 'failed'
+    message: str = ""
+    week_start: date | None = None
+    headline: str | None = None
+
+
+@router.post(
+    "/digests/generate",
+    response_model=GenerateDigestResponse,
+    dependencies=[Depends(_require_admin_key)],
+)
+def generate_ad_hoc_digest(
+    body: GenerateDigestBody = Body(default_factory=GenerateDigestBody),
+    session: Session = Depends(get_session),
+):
+    """Generate a digest right now covering everything since the last one.
+
+    Rate-limited at 24h: if the most recent digest was published within
+    the last day, returns `skipped_rate_limited` with a `message`
+    explaining when the next run is allowed. `force=true` bypasses
+    the gate for genuine re-runs (data fix, prompt iteration).
+
+    `notes` is a list of verified facts to feed Claude in the
+    EDITORIAL NOTES section of the prompt — useful when a milestone or
+    off-court story isn't captured by the match/news ingest.
+    """
+    result = generate_digest(
+        session,
+        force=body.force,
+        editorial_notes=body.notes or None,
+    )
+    return GenerateDigestResponse(
+        status=result.status,
+        message=result.message,
+        week_start=result.row.week_start if result.row else None,
+        headline=result.row.headline if result.row else None,
     )
