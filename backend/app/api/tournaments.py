@@ -802,6 +802,12 @@ def get_tournament_current(
     return TournamentDetail(**t.model_dump(), available_tours=available)
 
 
+# Small in-process cache mirroring /api/matches/live — same reasoning.
+import time as _time2
+_TOURNAMENT_MATCHES_CACHE: dict[tuple[str, str, str | None, int], tuple[float, list]] = {}
+_TOURNAMENT_MATCHES_CACHE_TTL = 5.0
+
+
 @router.get("/{tour}/{slug}/matches", response_model=list[MatchSummary])
 def tournament_matches_current(
     tour: Tour,
@@ -813,34 +819,37 @@ def tournament_matches_current(
     """Matches for the current edition. Same resolution rules as the
     year-less detail endpoint above.
 
+    5-second in-process cache so live-page refreshes (SSE-driven on
+    the frontend now) don't multiply into one SQL query per visitor
+    per refresh.
+
     Qualifying-bracket rounds are filtered out at the SQL level. They
     add ~110 rows to a Slam payload and the only consumer (the
     bracket / matches list) doesn't render them — but they squeeze
     real main-draw matches past the limit cap, producing phantom
-    TBD slots on the bracket. api-tennis labels qualifying brackets
-    with verbose forms like "ATP French Open - Quarter-finals" / "...
-    - Semi-finals" / "... - Final", which is also why we can't use
-    the round depth to filter — we filter by string pattern instead.
+    TBD slots on the bracket.
     """
+    canonical = _canonical_url_slug(slug)
+    cache_key = (tour.value, canonical, status, limit)
+    hit = _TOURNAMENT_MATCHES_CACHE.get(cache_key)
+    if hit and (_time2.monotonic() - hit[0]) < _TOURNAMENT_MATCHES_CACHE_TTL:
+        return hit[1]
+
     t = _resolve_current_edition(session, tour, slug)
     if not t:
         raise HTTPException(404, "Tournament not found")
     stmt = (
         select(Match)
         .where(Match.tournament_id == t.id)
-        # Exclude qualifying-bracket rounds (verbose api-tennis
-        # nomenclature). These have a "<Tour name> - <Round>" prefix
-        # before "Quarter-finals" / "Semi-finals" / "Final" /
-        # "1/64-finals" etc. Short-code rounds (F/SF/QF/R128/...) from
-        # Wikipedia + Sackmann don't start with that prefix and pass
-        # through.
         .where(~Match.round.contains(" - "))
     )
     if status:
         from app.api._helpers import filter_status
         stmt = filter_status(stmt, status)
     stmt = stmt.order_by(Match.scheduled_at).limit(limit)
-    return [match_to_summary(session, m) for m in session.exec(stmt).all()]
+    out = [match_to_summary(session, m) for m in session.exec(stmt).all()]
+    _TOURNAMENT_MATCHES_CACHE[cache_key] = (_time2.monotonic(), out)
+    return out
 
 
 # Year-specific matches endpoint — used by ChampionsList's lazy bracket

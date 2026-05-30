@@ -22,6 +22,15 @@ import { API_BASE } from "@/lib/api";
  * server fetch cache TTLs (kept short for `/api/matches/live` so the
  * refresh actually returns fresh data).
  */
+/**
+ * Always-on by default. Earlier we accepted an `enabled` prop derived
+ * from "does the page currently have live matches?", but that gating
+ * was sticky — once it went false (e.g. when the last match of the
+ * evening ended), the SSE listener never reconnected within the same
+ * page session, and new matches starting later didn't trigger any
+ * refresh. EventSource is cheap (one connection per tab); keeping it
+ * always open is the right trade.
+ */
 export function LiveStreamRefresh({ enabled = true }: { enabled?: boolean }) {
   const router = useRouter();
 

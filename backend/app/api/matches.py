@@ -33,11 +33,32 @@ FEATURED_CATEGORIES = (
 FEATURED_HORIZON = timedelta(hours=36)
 
 
+# Small in-process cache for /live. The frontend ISR layer used to
+# carry the load-protection role (revalidate: 15 on the fetch), but
+# that defeated SSE-triggered refreshes because router.refresh() hit
+# the cache and got stale data back. Cache moved server-side so the
+# frontend can pass `cache: 'no-store'` and get fresh-ish data on
+# every request, while N concurrent visitors during a busy Slam day
+# don't multiply into N concurrent SQL queries.
+import time as _time
+_LIVE_CACHE: dict[tuple[int], tuple[float, list]] = {}
+_LIVE_CACHE_TTL = 5.0  # seconds
+
+
 @router.get("/live", response_model=list[MatchSummary])
 def live_matches(
     limit: int = Query(100, ge=1, le=200),
     session: Session = Depends(get_session),
 ):
+    # 5-second in-process cache. Burst of clicks during a tense game
+    # all hit the same cached payload; outside the burst, every
+    # request hits the SQL. The TTL is short enough that "30 seconds
+    # behind reality" isn't a thing the user can notice.
+    cache_key = (limit,)
+    hit = _LIVE_CACHE.get(cache_key)
+    if hit and (_time.monotonic() - hit[0]) < _LIVE_CACHE_TTL:
+        return hit[1]
+
     # Live + suspended (rain delays) keep their in-progress score
     # visible. We ALSO return finished matches whose scheduled_at is
     # within the last 36 hours — wide enough that for any client
@@ -89,7 +110,9 @@ def live_matches(
         .order_by(status_priority, tier_priority, Match.scheduled_at.desc())
         .limit(limit)
     )
-    return [match_to_summary(session, m) for m in session.exec(stmt).all()]
+    out = [match_to_summary(session, m) for m in session.exec(stmt).all()]
+    _LIVE_CACHE[cache_key] = (_time.monotonic(), out)
+    return out
 
 
 @router.get("/today", response_model=list[MatchSummary])

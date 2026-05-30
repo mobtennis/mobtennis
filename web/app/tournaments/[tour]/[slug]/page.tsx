@@ -12,7 +12,7 @@ import {
   type VideoItemSummary,
 } from "@/lib/api";
 import { AdSlot } from "@/components/AdSlot";
-import { AutoRefresh } from "@/components/AutoRefresh";
+import { LiveStreamRefresh } from "@/components/LiveStreamRefresh";
 import { Bracket } from "@/components/Bracket";
 import { ChampionsList } from "@/components/ChampionsList";
 import { Countdown } from "@/components/Countdown";
@@ -37,6 +37,13 @@ function asTour(t: string): Tour | null {
   return t === "atp" || t === "wta" ? t : null;
 }
 
+// Disable Vercel's page-level ISR cache. Tournament pages during an
+// in-progress event are live data; first-load freshness matters
+// (user opens RG tab during a match → wants to see THIS set's score,
+// not the score from 60s ago). Backend caches keep load bounded.
+export const revalidate = 0;
+
+
 export async function generateMetadata({ params }: { params: Params }) {
   const { slug, tour } = await params;
   // Year deliberately omitted — the URL is year-less by design, the page
@@ -58,14 +65,15 @@ export default async function TournamentPage({ params }: { params: Params }) {
   if (!tournament) notFound();
 
   const [matches, champions, overview, news, videos] = await Promise.all([
-    // 15s revalidate. Combined with the SSE-driven router.refresh()
-    // this still surfaces score updates within ~15s of upstream
-    // (the SSE event triggers the refresh; the data cache returns
-    // fresh content on the next 15s tick). Anything tighter and the
-    // backend gets DDoS'd by routine page revalidations.
+    // revalidate: 0 — let SSE-triggered router.refresh() actually
+    // produce fresh data. Backend has a 5-second in-process cache on
+    // this endpoint so concurrent visitors don't multiply into N SQL
+    // queries; the per-request Next.js fetch cache was redundant AND
+    // defeated the SSE-driven refresh by returning cached data inside
+    // its 15s window.
     api<MatchSummary[]>(
       `/api/tournaments/${tourEnum}/${slug}/matches?limit=128`,
-      { revalidate: 15 },
+      { revalidate: 0 },
     ).catch(() => []),
     api<TournamentChampion[]>(
       `/api/tournaments/${tourEnum}/${slug}/champions?limit=5`,
@@ -123,7 +131,13 @@ export default async function TournamentPage({ params }: { params: Params }) {
 
   return (
     <div className="space-y-6">
-      <AutoRefresh enabled={live.some((m) => m.status === "live" || m.status === "suspended")} intervalMs={15_000} />
+      {/* SSE-driven refresh, always on. Replaces the previous gated
+          15s polling timer — that timer turned itself off whenever
+          the visible "live" set went empty (between sessions or
+          after the last match of the day) and never came back without
+          a full reload, leaving users staring at hour-old data on
+          tabs they'd kept open. */}
+      <LiveStreamRefresh />
       <TrackOnMount
         event={EVENTS.tournamentOpened}
         properties={{

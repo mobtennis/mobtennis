@@ -14,24 +14,26 @@ import { LiveStreamRefresh } from "@/components/LiveStreamRefresh";
 import { SectionHeader } from "@/components/SectionHeader";
 import { isLocalToday } from "@/lib/format";
 
+// Disable Vercel's page-level ISR cache on the home page — it's the
+// live tab, and first-load freshness matters during Slams. Without
+// this, Vercel CDN serves stale HTML (`x-vercel-cache: STALE` /
+// `age: N`) on the first hit of each ~30s window even though the
+// fetches inside have `revalidate: 0`. The backend caches keep load
+// bounded (5s in-process on /matches/live, 30s on /tournaments/index).
+export const revalidate = 0;
+
 export default async function HomePage() {
   const [live, upcomingFeatured, news, videos, tIndex] = await Promise.all([
-    // Revalidate every 15s. Earlier this afternoon we tried 5s with
-    // an SSE-triggered router.refresh() on top; the combination of
-    // very frequent re-fetches across every page that mounts
-    // LiveStreamRefresh tipped the backend into memory pressure and
-    // it OOM'd. 15s is a reasonable cap on staleness for live tennis
-    // and keeps the working set sane on the 2 GB box.
-    api<MatchSummary[]>("/api/matches/live", { revalidate: 15 }).catch(() => []),
-    api<MatchSummary[]>("/api/matches/upcoming-featured", { revalidate: 120 }).catch(() => []),
+    // Live-data fetches: revalidate: 0 ⇒ no Next.js fetch-cache.
+    // Backend has its own 5-second in-process cache on /matches/live
+    // and 30s on /tournaments/index, so concurrent visitors don't
+    // multiply into N SQL queries — but every router.refresh() (from
+    // SSE) actually sees fresh data, which is the whole point.
+    api<MatchSummary[]>("/api/matches/live", { revalidate: 0 }).catch(() => []),
+    api<MatchSummary[]>("/api/matches/upcoming-featured", { revalidate: 60 }).catch(() => []),
     api<NewsItemSummary[]>("/api/news?limit=8", { revalidate: 900 }).catch(() => []),
     api<VideoItemSummary[]>("/api/videos?limit=8", { revalidate: 900 }).catch(() => []),
-    // 60s — the "live" section changes minute-to-minute as tournaments
-    // start and singles finals complete. 10-minute caching caused Rome
-    // to vanish from the live view minutes after it was correctly added
-    // by the backend. Backend has its own 30s in-process cache so this
-    // doesn't actually translate to 2× the backend traffic.
-    api<TournamentsIndexResponse>("/api/tournaments/index", { revalidate: 60 }).catch(() => ({
+    api<TournamentsIndexResponse>("/api/tournaments/index", { revalidate: 0 }).catch(() => ({
       sections: [] as TournamentsIndexResponse["sections"],
     })),
   ]);
@@ -52,7 +54,13 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-6">
-      <LiveStreamRefresh enabled={todaysLive.some((m) => m.status === "live" || m.status === "suspended")} />
+      {/* SSE-driven refresh, always enabled. Earlier we gated on
+          "has live matches AT PAGE LOAD" — that meant the listener
+          died silently when the last match of the day ended, and
+          new matches the next morning didn't reconnect without a
+          full reload. SSE connection cost is one EventSource per
+          tab; trivially cheap. */}
+      <LiveStreamRefresh />
 
       {/* Weekly editorial digest — top of the page so the editorial
           voice is the first thing a visitor sees. Server-renders
