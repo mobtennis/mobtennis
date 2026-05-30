@@ -145,9 +145,13 @@ export function formatRelative(iso: string): string {
 
 export function flagEmoji(iso3: string | null): string {
   if (!iso3) return "";
+  // ATP/WTA neutral-flag policy: Russian players compete without a
+  // national flag while the war in Ukraine continues. Don't render
+  // a RUS flag anywhere in the app.
+  if (iso3.toUpperCase() === "RUS") return "";
   const map: Record<string, string> = {
     USA: "US", GBR: "GB", ESP: "ES", FRA: "FR", ITA: "IT", GER: "DE",
-    SUI: "CH", AUT: "AT", SRB: "RS", CRO: "HR", RUS: "RU", BLR: "BY",
+    SUI: "CH", AUT: "AT", SRB: "RS", CRO: "HR", BLR: "BY",
     POL: "PL", CZE: "CZ", SVK: "SK", BUL: "BG", GRE: "GR", DEN: "DK",
     SWE: "SE", NOR: "NO", FIN: "FI", NED: "NL", BEL: "BE", POR: "PT",
     UKR: "UA", AUS: "AU", NZL: "NZ", JPN: "JP", CHN: "CN", KOR: "KR",
