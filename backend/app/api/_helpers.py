@@ -1,3 +1,4 @@
+from sqlalchemy import or_
 from sqlmodel import Session, select
 
 from app.models.match import Match, MatchStatus
@@ -62,6 +63,25 @@ def match_to_summary(session: Session, m: Match) -> MatchSummary:
         bracket_position=m.bracket_position,
         player1_seed=m.player1_seed,
         player2_seed=m.player2_seed,
+    )
+
+
+def exclude_junior_rounds(stmt):
+    """Skip Boys'/Girls' brackets at Slams (junior tour).
+
+    At Slams the junior brackets share the same Tournament row as the
+    main draw but use verbose round labels prefixed "Boys " / "Girls "
+    (e.g. "Boys French Open - Semi-finals"), whereas main-draw rounds
+    use short codes like "F", "SF", "QF". Filter on the prefix and
+    keep NULL rounds (lower-tier ITF/Challenger matches in our DB
+    often have null round labels).
+    """
+    return stmt.where(
+        Match.round.is_(None)
+        | ~or_(
+            Match.round.startswith("Boys "),
+            Match.round.startswith("Girls "),
+        )
     )
 
 

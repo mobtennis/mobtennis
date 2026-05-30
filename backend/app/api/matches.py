@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case
 from sqlmodel import Session, select
 
-from app.api._helpers import match_to_summary
+from app.api._helpers import exclude_junior_rounds, match_to_summary
 from app.db.session import get_session
 from app.models.match import Match, MatchStatus
 from app.models.player import Player
@@ -110,6 +110,7 @@ def live_matches(
         .order_by(status_priority, tier_priority, Match.scheduled_at.desc())
         .limit(limit)
     )
+    stmt = exclude_junior_rounds(stmt)
     out = [match_to_summary(session, m) for m in session.exec(stmt).all()]
     _LIVE_CACHE[cache_key] = (_time.monotonic(), out)
     return out
@@ -128,6 +129,7 @@ def today_matches(
         .order_by(Match.scheduled_at)
         .limit(limit)
     )
+    stmt = exclude_junior_rounds(stmt)
     return [match_to_summary(session, m) for m in session.exec(stmt).all()]
 
 
@@ -159,6 +161,7 @@ def upcoming_featured_matches(
         .order_by(Match.scheduled_at)
         .limit(limit)
     )
+    stmt = exclude_junior_rounds(stmt)
     return [match_to_summary(session, m) for m in session.exec(stmt).all()]
 
 
