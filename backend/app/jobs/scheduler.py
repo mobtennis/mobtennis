@@ -15,6 +15,7 @@ from app.config import settings
 from app.db.session import engine
 from app.models.match import Match, MatchStatus
 from app.models.player import Tour
+from app.models.tournament import Tournament, TournamentCategory
 from app.services.categorize import recategorize_all
 from app.api._helpers import match_to_summary
 from app.services.follow_event_fanout import fan_out as fan_out_follow_events
@@ -590,20 +591,57 @@ def _sweep_stuck_matches_job() -> None:
         log.exception("stuck-match sweep failed")
 
 
+def _digest_should_publish_today(session: Session) -> tuple[bool, str]:
+    """Decide whether today's 06:00 UTC cron should attempt a digest.
+
+    Returns (should_run, reason). The 24h rate-limit + sliding-window
+    inside generate_digest() handle any further safety checks.
+
+    Cadence:
+      - Monday: always (the baseline "this week in tennis").
+      - Any day during a Slam: daily-during-fortnight gives users a
+        Day-1-upsets / Day-3-shocks / QF / SF / F recap rhythm that
+        matches the actual storyline cadence. A Monday cron alone
+        leaves Sinner's R64 loss sitting in next week's recap until
+        Monday morning, by which time the news has moved on.
+      - Other days: skip.
+    """
+    today = date.today()
+    if today.weekday() == 0:
+        return True, "monday"
+    slam = session.exec(
+        select(Tournament).where(
+            Tournament.category == TournamentCategory.GRAND_SLAM,
+            Tournament.start_date.is_not(None),
+            Tournament.end_date.is_not(None),
+            Tournament.start_date <= today,
+            Tournament.end_date >= today,
+        )
+    ).first()
+    if slam is not None:
+        return True, f"slam in progress ({slam.slug} {slam.year})"
+    return False, "off-week, off-slam"
+
+
 async def _generate_weekly_digest_job() -> None:
     """Generates the editorial digest for whatever's happened since the
-    last one. Cron runs Mon 06:00 UTC, which means the natural sliding
-    window catches the previous week's worth of news + match results.
+    last one. Cron runs daily at 06:00 UTC, with `_digest_should_publish_today`
+    deciding whether THIS day's run actually does anything:
+      - Mondays: yes (weekly baseline)
+      - Any day during a Grand Slam: yes (daily cadence)
+      - Otherwise: skip silently
 
-    The service is rate-limited (24h gate) and self-windowing, so it's
-    safe to call any time — a Monday run that comes shortly after an
-    ad-hoc Wednesday digest will be politely refused as "too soon".
+    The service is rate-limited (24h gate) and self-windowing, so even
+    on a "yes" day the run can become a no-op if an ad-hoc digest
+    fired recently.
     """
     try:
         with Session(engine) as session:
-            # No force=True — the 24h rate-limit is intentional. If
-            # an ad-hoc digest fired in the last day, this Mon cron
-            # correctly skips.
+            should_run, reason = _digest_should_publish_today(session)
+            if not should_run:
+                log.debug("digest cron: skipping today (%s)", reason)
+                return
+            log.info("digest cron firing (%s)", reason)
             result = generate_digest(session)
             if result.status == "created":
                 log.info("editorial digest created (%s)", result.row.week_start)
@@ -809,15 +847,16 @@ def start_scheduler() -> None:
         id="reconcile_tournament_dates_boot",
     )
 
-    # Weekly editorial digest. Monday 06:00 UTC — late enough that
-    # Sunday's finals have settled in every timezone and the api-tennis
-    # backfill has reconciled, early enough that the page reads
-    # "this morning" to European readers. misfire_grace_time of 6h means
-    # even if the worker is restarting at the cron mark, we still catch
-    # the run.
+    # Editorial digest cron — fires DAILY at 06:00 UTC. The job itself
+    # decides whether today's run actually generates anything (see
+    # `_digest_should_publish_today`): Mondays always, any Slam day
+    # always, all other days a silent no-op. This gives readers a
+    # daily recap during Slams while keeping a weekly baseline in
+    # between. misfire_grace_time of 6h catches runs missed during a
+    # deploy or transient process bounce.
     _scheduler.add_job(
         _generate_weekly_digest_job,
-        CronTrigger(day_of_week="mon", hour=6, minute=0),
+        CronTrigger(hour=6, minute=0),
         id="generate_weekly_digest",
         max_instances=1,
         coalesce=True,
