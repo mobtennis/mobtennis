@@ -182,6 +182,7 @@ export function flagEmoji(iso3: string | null): string {
     ISR: "IL", TUR: "TR", LIB: "LB", HUN: "HU", ROU: "RO", LAT: "LV",
     LTU: "LT", EST: "EE", SLO: "SI", BIH: "BA", MNE: "ME", MDA: "MD",
     GEO: "GE", ARM: "AM", AZE: "AZ", IRL: "IE", ISL: "IS", LUX: "LU",
+    MON: "MC",
   };
   const iso2 = map[iso3.toUpperCase()];
   if (!iso2) return "";
