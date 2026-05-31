@@ -472,24 +472,29 @@ def tournament_champions(
     for tid, tyear in instances:
         if len(out) >= needed:
             break
-        # Two-column tuples instead of full Match rows. Singles only —
-        # the doubles final shares "Final" depth with the singles final
-        # and (without this filter) max() can return the doubles winner,
-        # which is how "Bolelli/Vavassori" briefly showed up as the 2026
-        # Rome champion.
+        # Short-code "F" ONLY — verbose api-tennis labels like
+        # "ATP French Open - Final" are also assigned to qualifying-
+        # bracket finals (every Q-bracket has its own "Final"). Using
+        # round_depth here was returning 100 for both, so an in-progress
+        # Slam where qualifying finished before the main draw started
+        # would surface the qualifier as the year's champion (e.g.
+        # Andrea Pellegrino briefly showed up as the 2026 RG winner).
+        # The strict equality check matches what last_edition does and
+        # is also why the doubles-vs-singles concern from the previous
+        # comment is no longer relevant — Sackmann + Wikipedia-applied
+        # bracket data uses "F" for the singles final only.
         rows = session.exec(
             select(Match.round, Match.winner_id)
             .where(
                 Match.tournament_id == tid,
                 Match.status == MatchStatus.FINISHED,
                 Match.is_doubles == False,  # noqa: E712 — SQLAlchemy expr
+                Match.round == "F",
             )
         ).all()
         if not rows:
             continue
-        deepest_round, winner_id = max(rows, key=lambda r: round_depth(r[0]))
-        if round_depth(deepest_round) < 100:
-            continue
+        _, winner_id = rows[0]
         if winner_id is None:
             continue
         champion = session.get(Player, winner_id)
