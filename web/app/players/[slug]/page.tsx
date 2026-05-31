@@ -38,8 +38,15 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   // has a name and not much else. Indexing them dilutes the site's
   // editorial signal without giving readers anything useful.
   const isThin = player.current_rank === null && player.career_high_rank === null;
+  // Annotate the title with the player's current rank when known —
+  // "Jannik Sinner — ATP #1" reads better than a bare name in browser
+  // tabs and search snippets. Falls back to bare name for retired or
+  // unranked players.
+  const rankSuffix = player.current_rank
+    ? ` — ${(player.tour ?? "").toUpperCase()} #${player.current_rank}`.replace(/  +/g, " ")
+    : "";
   return {
-    title: player.full_name,
+    title: `${player.full_name}${rankSuffix}`,
     ...(isThin ? { robots: { index: false, follow: true } } : {}),
   };
 }

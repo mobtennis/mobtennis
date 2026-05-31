@@ -46,9 +46,18 @@ export const revalidate = 0;
 
 export async function generateMetadata({ params }: { params: Params }) {
   const { slug, tour } = await params;
-  // Year deliberately omitted — the URL is year-less by design, the page
-  // can show any edition's data depending on what's most relevant.
-  return { title: `${slug.replace(/-/g, " ")} (${tour.toUpperCase()})` };
+  // Pull the resolved edition so the title reflects the actual event
+  // name ("French Open 2026") rather than the URL slug ("roland garros").
+  // Same endpoint the page body calls — Next.js dedupes the fetch.
+  const tournament = await api<TournamentDetail>(
+    `/api/tournaments/${tour}/${slug}`,
+  ).catch(() => null);
+  if (!tournament) {
+    return { title: `${slug.replace(/-/g, " ")} (${tour.toUpperCase()})` };
+  }
+  return {
+    title: `${tournament.name} ${tournament.year} (${tour.toUpperCase()})`,
+  };
 }
 
 export default async function TournamentPage({ params }: { params: Params }) {
