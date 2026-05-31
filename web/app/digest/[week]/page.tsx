@@ -7,6 +7,13 @@ import { SectionHeader } from "@/components/SectionHeader";
 import { TrackOnMount } from "@/components/TrackOnMount";
 import { EVENTS } from "@/lib/analytics";
 
+// Disable Vercel's page-level ISR. Digest detail pages get edited
+// mid-day (re-force after a data fix, sources-block bug, prompt
+// iteration), and a 24h ISR window stranded users on the stale HTML
+// for the rest of the day. Backend has source_json cached so this
+// stays cheap; the per-fetch revalidate=0 below pairs with it.
+export const revalidate = 0;
+
 export async function generateMetadata({
   params,
 }: {
@@ -14,7 +21,7 @@ export async function generateMetadata({
 }) {
   const { week } = await params;
   const digest = await api<DigestDetail>(`/api/digests/${week}`, {
-    revalidate: 86400,
+    revalidate: 0,
   }).catch(() => null);
   if (!digest) return { title: "Weekly digest" };
   return {
@@ -35,9 +42,11 @@ export default async function DigestWeekPage({
   if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) notFound();
 
   const [digest, archive] = await Promise.all([
-    // 24h cache. During iteration (re-backfill or data fix), drop this
-    // to 600 and ping the page 2-3 times to flush ISR via SWR.
-    api<DigestDetail>(`/api/digests/${week}`, { revalidate: 86400 }).catch(() => null),
+    // revalidate=0: bypass the Next.js fetch cache. Digests get edited
+    // mid-day (force re-runs after a fact correction or prompt tweak)
+    // and a long-lived cache stranded users on the old version for 24h.
+    // Backend keeps response shape small and source_json parsing cheap.
+    api<DigestDetail>(`/api/digests/${week}`, { revalidate: 0 }).catch(() => null),
     // 100 is enough for any reasonable archive view + neighbour lookup.
     api<DigestSummary[]>(`/api/digests?limit=100`, { revalidate: 600 }).catch(
       () => [] as DigestSummary[],
