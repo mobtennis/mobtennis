@@ -1,15 +1,15 @@
 /**
- * Network-agnostic ad slot. Two real networks supported (Ezoic + AdSense);
- * the rendered markup is whichever the configured network needs. Switching
- * is a config flip — no code change at the slot call sites.
+ * Network-agnostic ad slot. AdSense is the only supported live
+ * network; the structure remains "network-agnostic" so swapping in
+ * another network later is a contained change.
  *
  * Render modes:
  *   "off"         — nothing
  *   "placeholder" — dashed-border preview (default in dev)
  *   "live"        — real ad markup for the configured network
  *
- * Network selection (one of):
- *   NEXT_PUBLIC_AD_NETWORK      = "adsense" | "ezoic" | "off"
+ * Network selection:
+ *   NEXT_PUBLIC_AD_NETWORK      = "adsense" | "off"
  *   ↳ When unset, falls back to "adsense" iff NEXT_PUBLIC_ADSENSE_CLIENT_ID
  *     is set (legacy behaviour), else "off" in prod / "placeholder" in dev.
  *
@@ -17,15 +17,7 @@
  *   NEXT_PUBLIC_ADS_MODE        = "off" | "placeholder" | "live"
  *
  * Per-slot unit IDs:
- *   NEXT_PUBLIC_ADSENSE_SLOT_*  — AdSense ad-unit ID per slot (existing).
- *   NEXT_PUBLIC_EZOIC_SLOT_*    — Ezoic numeric placeholder ID per slot.
- *
- * Ezoic discovers placeholders by ID. Their dashboard generates numbers
- * like 101, 102, … which you paste into env vars below. The Ezoic
- * loader script (sa.min.js) is mounted by <EzoicScripts /> in
- * layout.tsx; per-route showAds/destroyPlaceholders is driven by
- * <EzoicRouteHandler />. Switching back is one env-var flip — see the
- * removal checklist in components/EzoicScripts.tsx.
+ *   NEXT_PUBLIC_ADSENSE_SLOT_*  — AdSense ad-unit ID per slot.
  */
 
 import { AdSenseInit } from "@/components/AdSenseInit";
@@ -46,9 +38,9 @@ const AD_CLIENT_ID = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID;
 
 // Inferred default network: explicit override wins; else AdSense iff its
 // client ID is configured (preserves the old behaviour for existing
-// deployments); else "off". Ezoic is opt-in only via the explicit env var.
-const AD_NETWORK: "adsense" | "ezoic" | "off" =
-  (process.env.NEXT_PUBLIC_AD_NETWORK as "adsense" | "ezoic" | "off" | undefined) ??
+// deployments); else "off".
+const AD_NETWORK: "adsense" | "off" =
+  (process.env.NEXT_PUBLIC_AD_NETWORK as "adsense" | "off" | undefined) ??
   (AD_CLIENT_ID ? "adsense" : "off");
 
 const ADS_MODE: "off" | "placeholder" | "live" =
@@ -67,16 +59,6 @@ const ADSENSE_SLOT_TO_UNIT: Record<string, string | undefined> = {
   "match-mid":              process.env.NEXT_PUBLIC_ADSENSE_SLOT_MATCH_MID,
   "rankings-mid":           process.env.NEXT_PUBLIC_ADSENSE_SLOT_RANKINGS_MID,
   "tournaments-index-top":  process.env.NEXT_PUBLIC_ADSENSE_SLOT_TOURNAMENTS_INDEX_TOP,
-};
-
-const EZOIC_SLOT_TO_PLACEHOLDER: Record<string, string | undefined> = {
-  "home-mid":               process.env.NEXT_PUBLIC_EZOIC_SLOT_HOME_MID,
-  "news-mid":               process.env.NEXT_PUBLIC_EZOIC_SLOT_NEWS_MID,
-  "player-mid":             process.env.NEXT_PUBLIC_EZOIC_SLOT_PLAYER_MID,
-  "tournament-mid":         process.env.NEXT_PUBLIC_EZOIC_SLOT_TOURNAMENT_MID,
-  "match-mid":              process.env.NEXT_PUBLIC_EZOIC_SLOT_MATCH_MID,
-  "rankings-mid":           process.env.NEXT_PUBLIC_EZOIC_SLOT_RANKINGS_MID,
-  "tournaments-index-top":  process.env.NEXT_PUBLIC_EZOIC_SLOT_TOURNAMENTS_INDEX_TOP,
 };
 
 export function AdSlot({ slot, size = "rectangle" }: Props) {
@@ -103,20 +85,6 @@ export function AdSlot({ slot, size = "rectangle" }: Props) {
   }
 
   // ADS_MODE === "live"
-  if (AD_NETWORK === "ezoic") {
-    const placeholderId = EZOIC_SLOT_TO_PLACEHOLDER[slot];
-    if (!placeholderId) return null;
-    // Per Ezoic docs: the placeholder div itself must stay bare (no
-    // styling) so an unfilled bid doesn't leave a fixed-height white
-    // space. Sizing lives on the outer wrapper instead, which still
-    // reserves layout while remaining invisible when empty.
-    return (
-      <div data-ad-slot={slot} className={`w-full ${MIN_HEIGHTS[size]}`}>
-        <div id={`ezoic-pub-ad-placeholder-${placeholderId}`} />
-      </div>
-    );
-  }
-
   if (AD_NETWORK === "adsense") {
     const unitId = ADSENSE_SLOT_TO_UNIT[slot];
     if (!AD_CLIENT_ID || !unitId) return null;

@@ -4,17 +4,16 @@ import Script from "next/script";
 import "@/styles/globals.css";
 import { AnalyticsInit } from "@/components/AnalyticsInit";
 import { BottomNav } from "@/components/BottomNav";
-import { EzoicRouteHandler } from "@/components/EzoicRouteHandler";
-import { EzoicScripts } from "@/components/EzoicScripts";
 import { Footer } from "@/components/Footer";
 import { TopBar } from "@/components/TopBar";
 
-// Ad-network loader selection. Explicit NEXT_PUBLIC_AD_NETWORK wins; the
-// legacy fallback ("AdSense iff ADSENSE_CLIENT_ID is set, else nothing") is
-// preserved so existing deployments keep working without touching env.
+// Ad-network loader selection. AdSense is the only supported live
+// network; "off" disables everything. Set NEXT_PUBLIC_AD_NETWORK
+// explicitly, or rely on the legacy fallback (AdSense iff
+// ADSENSE_CLIENT_ID is configured).
 const AD_CLIENT_ID = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID;
-const AD_NETWORK: "adsense" | "ezoic" | "off" =
-  (process.env.NEXT_PUBLIC_AD_NETWORK as "adsense" | "ezoic" | "off" | undefined) ??
+const AD_NETWORK: "adsense" | "off" =
+  (process.env.NEXT_PUBLIC_AD_NETWORK as "adsense" | "off" | undefined) ??
   (AD_CLIENT_ID ? "adsense" : "off");
 
 // Google Ads conversion-tracking tag. Renders on every page so a click
@@ -31,11 +30,9 @@ export const metadata: Metadata = {
     "Live ATP & WTA scores, player profiles, tournament draws, head-to-head, news. Fan-first, fast, clean.",
   applicationName: "Mob Tennis",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Mob Tennis" },
-  // AdSense site verification — gives Google an unambiguous signal that
-  // this domain belongs to our publisher account, even before the loader
-  // script is allowed to run on the page. Keep this even when ads are
-  // currently served via Ezoic; it's a static claim about ownership and
-  // makes flipping back to AdSense later a one-env-var change.
+  // AdSense site verification — static claim of ownership for Google's
+  // crawlers, independent of whether the loader script is currently
+  // mounted on the page.
   other: {
     "google-adsense-account": "ca-pub-4959082323175364",
   },
@@ -53,10 +50,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <AnalyticsInit />
-        {/* No-op unless AD_NETWORK=ezoic. Drives the per-route
-            placeholder lifecycle (destroyPlaceholders → showAds) on
-            App Router navigations. */}
-        <EzoicRouteHandler />
         <TopBar />
         {/* No bottom padding on `main` — the Footer below owns the
             clearance for the mobile BottomNav (pb-24 there). Setting
@@ -76,10 +69,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             async
           />
         )}
-        {/* Ezoic — CMP scripts, ezstandalone queue init, sa.min.js loader,
-            and analytics.js. Renders nothing unless AD_NETWORK=ezoic, so
-            switching networks is one env var. */}
-        <EzoicScripts />
 
         {/* Google Ads gtag — conversion attribution for paid campaigns.
             afterInteractive so it doesn't block first paint. The two

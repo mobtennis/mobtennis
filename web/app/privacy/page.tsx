@@ -95,10 +95,10 @@ export default function PrivacyPage() {
           >
             About
           </a>
-          ). Ads are served by third-party networks (currently Ezoic; previously
-          and possibly again in the future Google AdSense). These networks
-          place their own cookies and may collect a subset of the data
-          described above plus information about ads you interact with.
+          ). Ads are served by third-party networks (currently Google
+          AdSense). These networks place their own cookies and may
+          collect a subset of the data described above plus information
+          about ads you interact with.
         </p>
         <p className="text-sm text-text-secondary">
           Our ad partners participate in the IAB Transparency &amp; Consent
@@ -117,15 +117,6 @@ export default function PrivacyPage() {
             className="text-accent underline decoration-dotted underline-offset-4 hover:text-accent-dim"
           >
             Google
-          </a>
-          {" · "}
-          <a
-            href="https://www.ezoic.com/privacy-policy/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-accent underline decoration-dotted underline-offset-4 hover:text-accent-dim"
-          >
-            Ezoic
           </a>
           .
         </p>
