@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, func, select
 
 from app.api._helpers import match_to_summary, player_summary
+from app.data.tournament_records import get_records
 from app.db.session import get_session
 from app.models.match import Match, MatchStatus
 from app.models.player import Player, Tour
@@ -590,112 +591,52 @@ def tournament_overview(tour: Tour, slug: str, session: Session = Depends(get_se
             )
             break
 
-    # ---- Records (titles, appearances, oldest/youngest, country) ----
-    titles_by_player: dict[int, set[int]] = defaultdict(set)
-    apps_by_player: dict[int, set[int]] = defaultdict(set)
-    titles_by_country: dict[str, int] = defaultdict(int)
-
-    for m in matches:
-        year = year_by_tid.get(m.tournament_id)
-        if not year:
-            continue
-        if m.player1_id:
-            apps_by_player[m.player1_id].add(year)
-        if m.player2_id:
-            apps_by_player[m.player2_id].add(year)
-        # Main-draw final only — short code "F" from Sackmann/Wikipedia.
-        # See last_edition comment above for why verbose labels are
-        # rejected.
-        if m.round == "F" and m.winner_id is not None:
-            titles_by_player[m.winner_id].add(year)
-
+    # ---- Records (Wikipedia-curated) ----
+    # Our own match data starts at 1968 (Sackmann's Open-Era cutoff) and
+    # has coverage gaps below the Slam/Masters tier. Computing "Most
+    # titles" / "Most appearances" / "Youngest champion" off it produced
+    # visibly wrong claims (e.g. Nadal at 5 RG titles instead of 14, the
+    # Australian Open record holder shown as a modern player instead of
+    # Margaret Court). The fix is to source the headline records from
+    # Wikipedia for the tournaments where it's worth the upkeep — Slams
+    # + Masters 1000s — and to show nothing for everything else (the
+    # user-facing rule is "no record beats a wrong record").
+    #
+    # Lookup table lives in app/data/tournament_records.py.
     records: list[TournamentRecord] = []
-
-    def _record_for_player(p: Player | None, title: str, detail: str) -> TournamentRecord | None:
-        if not p:
-            return None
-        return TournamentRecord(
-            title=title,
-            value=p.full_name,
-            detail=detail,
-            player_slug=p.slug,
-            image_url=p.image_url or None,
-            country_code=p.country_code,
-        )
-
-    if titles_by_player:
-        top_id = max(titles_by_player, key=lambda i: len(titles_by_player[i]))
-        n = len(titles_by_player[top_id])
-        rec = _record_for_player(
-            get_player(top_id), "Most titles", f"{n} title{'s' if n != 1 else ''}"
-        )
-        if rec:
-            records.append(rec)
-
-        # Country with the most titles via winners (uses the player cache).
-        for pid in titles_by_player:
-            p = get_player(pid)
-            if p and p.country_code:
-                titles_by_country[p.country_code] += len(titles_by_player[pid])
-        if titles_by_country:
-            top_country = max(titles_by_country, key=titles_by_country.get)
-            records.append(
-                TournamentRecord(
-                    title="Most successful country",
-                    value=top_country,
-                    detail=f"{titles_by_country[top_country]} titles",
-                    country_code=top_country,
-                )
+    for wr in get_records(tour.value, slug):
+        p = session.exec(
+            select(Player).where(
+                Player.full_name == wr.player_name,
+                Player.tour == tour,
             )
-
-        # Youngest + oldest champion (age in tournament year — coarse but stable).
-        ages_at_title: list[tuple[int, int, int]] = []  # (player_id, year, age_at_year_start)
-        for pid, years in titles_by_player.items():
-            p = get_player(pid)
-            if not p or not p.birth_date:
-                continue
-            for yr in years:
-                ages_at_title.append((pid, yr, yr - p.birth_date.year))
-        if ages_at_title:
-            youngest = min(ages_at_title, key=lambda x: x[2])
-            oldest = max(ages_at_title, key=lambda x: x[2])
-            yp = get_player(youngest[0])
-            op = get_player(oldest[0])
-            if yp:
-                records.append(
-                    TournamentRecord(
-                        title="Youngest champion",
-                        value=yp.full_name,
-                        detail=f"Age {youngest[2]}, {youngest[1]}",
-                        player_slug=yp.slug,
-                        image_url=yp.image_url or None,
-                        country_code=yp.country_code,
-                    )
-                )
-            if op and (yp is None or op.id != yp.id):
-                records.append(
-                    TournamentRecord(
-                        title="Oldest champion",
-                        value=op.full_name,
-                        detail=f"Age {oldest[2]}, {oldest[1]}",
-                        player_slug=op.slug,
-                        image_url=op.image_url or None,
-                        country_code=op.country_code,
-                    )
-                )
-
-    if apps_by_player:
-        top_id = max(apps_by_player, key=lambda i: len(apps_by_player[i]))
-        n = len(apps_by_player[top_id])
-        rec = _record_for_player(
-            get_player(top_id), "Most appearances", f"{n} editions",
+        ).first()
+        # Player may be in our DB without the tour pegged correctly (older
+        # players sometimes lack the tour column). Fall back to a
+        # name-only lookup so the record still renders with an avatar.
+        if p is None:
+            p = session.exec(
+                select(Player).where(Player.full_name == wr.player_name)
+            ).first()
+        title_word = "title" if wr.count == 1 else "titles"
+        detail = f"{wr.count} {title_word}"
+        if wr.tied_with:
+            detail += f" · tied with {', '.join(wr.tied_with)}"
+        records.append(
+            TournamentRecord(
+                title=wr.title,
+                value=p.full_name if p else wr.player_name,
+                detail=detail,
+                player_slug=p.slug if p else None,
+                image_url=(p.image_url if p else None) or None,
+                country_code=p.country_code if p else None,
+            )
         )
-        if rec:
-            records.append(rec)
 
     # ---- Stats ----
-    # Main-draw F only (short code) — same reasoning as last_edition /
-    # titles_by_player above.
+    # Main-draw F only (short code) — same reasoning as last_edition above:
+    # verbose api-tennis labels like "ATP French Open - Final" can match
+    # qualifying-bracket finals, which would inflate total_editions.
     tids_with_finals = {
         m.tournament_id for m in matches if m.round == "F"
     }
