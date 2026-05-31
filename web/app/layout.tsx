@@ -26,7 +26,7 @@ const GOOGLE_ADS_ID =
   process.env.NEXT_PUBLIC_GOOGLE_ADS_ID ?? "AW-18177033731";
 
 export const metadata: Metadata = {
-  title: { default: "Mob Tennis — live tennis, your way", template: "%s · Mob Tennis" },
+  title: { default: "Mob Tennis — Every match. Every story.", template: "%s · Mob Tennis" },
   description:
     "Live ATP & WTA scores, player profiles, tournament draws, head-to-head, news. Fan-first, fast, clean.",
   applicationName: "Mob Tennis",
