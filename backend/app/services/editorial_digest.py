@@ -583,18 +583,24 @@ CAMPAIGN BRIEFS:
 - Stay strictly within the supplied facts. No invented stories, scores, players, or tournament names. Same rules as the body.
 - Ad copy goal: drive a click. Honest, factual, no clickbait, no superlatives the data doesn't support. Mention mob.tennis or the value (free, no sign-up, live scores) in at least one headline.
 
-NEWS SOURCES:
-- The recap is editorial paraphrase, not original reporting. Every off-court claim — anything the match table cannot tell — MUST be attributed in `news_sources`.
-- What counts as "from news" (not from match results) and therefore needs citation:
+NEWS SOURCE CITATION (INLINE):
+- The recap is editorial paraphrase, not original reporting. Every off-court claim MUST be cited INLINE by linking a natural anchor phrase to the supporting News URL — same `[anchor](url)` markdown as internal links, but using the news URL from the News block.
+- What counts as "from news" (not derivable from match data) and therefore needs an inline citation:
     * player quotes, interviews, press-conference content
     * dedications, family stories, personal milestones beyond the score
     * locker-room atmosphere, off-court drama, controversies, complaints
     * scheduling decisions, format changes, organisational news
     * ranking analyses, narrative framing about a draw being "wide open" or "in turmoil"
     * Russia/Ukraine commentary or any political statement by a player
-- For each off-court claim in the body, find the supporting News headline and add it to `news_sources`. If you mention 5 off-court items, expect ~5 entries.
-- Empty list is correct ONLY when literally every sentence in the body is a pure match-result fact (champion, score, opponent, round). That is rare during Slams — most weeks will have several citations.
-- Each source is `{title, url, source}` — copy these verbatim from the News block. Do NOT invent URLs, paraphrase titles, or merge multiple headlines into one entry.
+- The anchor phrase is a natural noun-or-verb phrase that semantically names the fact — never "(source)", "[1]", or the publisher's name in parentheses. Good examples:
+    * "Oliynykova [tearfully called for sanctions](https://…) against Shnaider"
+    * "Svajda advanced to the fourth round, [dedicating his win to his late father](https://…)"
+    * "Querrey [went public with anger over a ball-kid controversy](https://…)"
+- One citation per off-court fact is enough. Don't double-link a span. Don't add footnote markers.
+- Match-result facts (champion, score, round, seed) do NOT get news citations — those are facts from the Finals/Upsets blocks.
+- An internal link (`/players/…`, `/tournaments/…`) and an external news link can sit in the same sentence but never on the same span of text. Pick whichever is more useful for the reader.
+- The URL inside the parentheses MUST be copied VERBATIM from the News block — same rule as the LINKS table.
+- ALSO record each external URL you used in the `news_sources` tool field (title, url, source from the News block, verbatim). This is an audit trail — readers will see the inline links in the body, not a separate sources list.
 
 EDITORIAL NOTES:
 - If the user prompt contains an `EDITORIAL NOTES` section, treat those facts as verified human-supplied context. Weave them naturally into the recap when the prose mentions the related player, tournament, or event. Notes are not inventions: they are additional truths to include.
@@ -734,25 +740,30 @@ _TOOL_SPEC = {
                 "type": "string",
                 "description": (
                     "One paragraph, 220-300 words. No newlines mid-paragraph. "
-                    "Inline markdown links of the form [Display text](/path) "
-                    "are allowed and expected — use the exact URLs from the "
-                    "LINKS section of the user prompt to anchor first mentions "
-                    "of each player and tournament. No other markdown."
+                    "Inline markdown links of the form [Display text](url) "
+                    "are allowed and expected. Two link kinds, same syntax:\n"
+                    "  - Internal: `/players/...`, `/tournaments/...`, `/h2h/...` "
+                    "from the LINKS table — used for first mention of each "
+                    "player and tournament.\n"
+                    "  - External: `https://...` from the News block — used to "
+                    "cite each off-court claim inline (see NEWS SOURCE "
+                    "CITATION rules in the system prompt).\n"
+                    "Copy URLs verbatim from their source block — never invent. "
+                    "No other markdown (no bold, italics, lists, headers)."
                 ),
             },
             "news_sources": {
                 "type": "array",
                 "description": (
-                    "Source-article citations. MANDATORY for any off-court "
-                    "claim in the body (quotes, dedications, controversies, "
-                    "ranking analyses, atmosphere, scheduling decisions, "
-                    "political statements). Match-result facts (champion, "
-                    "score, round, seed) do NOT need citations; everything "
-                    "else does. Most Slam weeks will have 3-8 entries. "
-                    "Copy `title`, `url`, and `source` verbatim from the "
-                    "News block of the user prompt — do not paraphrase. "
-                    "Empty list is correct only when the body is pure "
-                    "match results with zero narrative or off-court content."
+                    "AUDIT TRAIL of the external URLs you used inline in "
+                    "the body. List one entry per `https://...` link you "
+                    "embedded in the body via `[anchor](url)` — same URL, "
+                    "verbatim. Readers see the citations inline in the "
+                    "prose, not as a separate sources list, but this field "
+                    "lets us check the body matches the citations claimed. "
+                    "Copy `title`, `url`, `source` verbatim from the News "
+                    "block — no paraphrasing. Empty only when zero external "
+                    "URLs appear in the body."
                 ),
                 "items": {
                     "type": "object",
@@ -1044,14 +1055,21 @@ def _validate_campaign_briefs(
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
-def sanitize_body_links(body: str, links: dict) -> str:
-    """Strip any markdown link whose URL isn't in the trusted LINKS table.
-    Replaces the link with its plain display text so the prose still reads.
+def sanitize_body_links(
+    body: str, links: dict, news: list[dict] | None = None,
+) -> str:
+    """Strip any markdown link whose URL isn't in the trusted set.
+
+    Trusted = internal LINKS table (player/tournament/h2h slugs) UNION
+    the external news URLs we offered the model this run. Anything
+    else gets collapsed to its display text so a hallucinated URL
+    never reaches the page.
 
     Belt-and-suspenders against the model abbreviating both a name and
     its URL together (e.g. emitting "[D. Prizmic](/players/d-prizmic)"
     when the real slug is `dino-prizmic`). The system prompt forbids
-    this, but the cost of a 404 is high enough to warrant a check.
+    this, but the cost of a 404 — or a phishing-shaped external URL —
+    is high enough to warrant a check.
     """
     allowed: set[str] = set()
     for bucket in ("players", "tournaments", "rivalries"):
@@ -1059,6 +1077,10 @@ def sanitize_body_links(body: str, links: dict) -> str:
             url = entry.get("url")
             if url:
                 allowed.add(url)
+    for item in news or []:
+        u = item.get("url") if isinstance(item, dict) else None
+        if u:
+            allowed.add(u)
 
     def replace(m: re.Match) -> str:
         text, href = m.group(1), m.group(2)
@@ -1217,7 +1239,9 @@ def generate_digest(
             message="LLM call failed or returned no usable response.",
         )
     headline, body, campaign_briefs, news_sources = result
-    body = sanitize_body_links(body, facts.get("links", {}))
+    body = sanitize_body_links(
+        body, facts.get("links", {}), news=facts.get("news"),
+    )
     briefs_blob = json.dumps(campaign_briefs) if campaign_briefs else None
     # Pack the LLM-self-reported source citations into source_json
     # alongside the input facts — readers see them in the digest UI,

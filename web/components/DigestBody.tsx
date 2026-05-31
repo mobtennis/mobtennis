@@ -2,13 +2,16 @@ import Link from "next/link";
 
 /**
  * Renders a digest body paragraph, turning inline markdown links of
- * the form `[Display text](/path)` into <Link> elements.
+ * the form `[Display text](url)` into either <Link> (internal slugs)
+ * or <a target="_blank"> (external news citations).
  *
- * The digest service produces these from a tightly scoped LINKS table
- * (only known player / tournament / H2H slugs), and the model is
- * forbidden from inventing URLs — but we still defensively require
- * internal `/` prefixes here so a hypothetical prompt-injection
- * couldn't sneak in an external URL.
+ * The digest service produces these from two tightly scoped tables:
+ * the internal LINKS list (player/tournament/H2H slugs) and the news
+ * URLs offered the model this run. Backend sanitisation strips any
+ * markdown link whose URL isn't on one of those allow-lists, so the
+ * renderer doesn't need to validate URLs further — it just picks the
+ * right anchor type based on whether the URL starts with `/` or
+ * `http(s)`.
  *
  * No general markdown is supported: no bold, italics, lists, or
  * headers. Body is a single paragraph by design.
@@ -22,6 +25,8 @@ export function DigestBody({ body }: { body: string }) {
 }
 
 const LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g;
+const LINK_CLASS =
+  "text-accent underline decoration-dotted underline-offset-4 hover:text-accent-dim";
 
 export function renderInlineLinks(body: string): React.ReactNode[] {
   const out: React.ReactNode[] = [];
@@ -34,19 +39,30 @@ export function renderInlineLinks(body: string): React.ReactNode[] {
     }
     const text = m[1];
     const href = m[2];
-    // Only internal links. Anything else falls through as plain text —
-    // strips the markdown but doesn't expose the URL.
     if (href.startsWith("/")) {
+      // Internal link — Next.js client-side navigation.
       out.push(
-        <Link
-          key={key++}
-          href={href}
-          className="text-accent underline decoration-dotted underline-offset-4 hover:text-accent-dim"
-        >
+        <Link key={key++} href={href} className={LINK_CLASS}>
           {text}
         </Link>,
       );
+    } else if (href.startsWith("http://") || href.startsWith("https://")) {
+      // External news citation — open in a new tab with noopener/noreferrer
+      // so the publisher's page can't navigate ours and isn't fed our
+      // referrer.
+      out.push(
+        <a
+          key={key++}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={LINK_CLASS}
+        >
+          {text}
+        </a>,
+      );
     } else {
+      // Unknown shape — strip the markdown but keep the text.
       out.push(<span key={key++}>{text}</span>);
     }
     lastIndex = idx + m[0].length;
