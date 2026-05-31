@@ -1001,11 +1001,14 @@ def sanitize_body_links(body: str, links: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-# Minimum interval between generations. Lower values cost LLM calls
-# without much new editorial content; this matches the user-stated
-# rate-limit ("If called within 24 hours then feel free to respond
-# with — we already have a digest").
-_MIN_REGEN_INTERVAL = timedelta(hours=24)
+# Minimum interval between generations. Lowered from 24h to 12h after
+# the Sunday cron skipped a digest mid-RG because the previous run had
+# fired ~20h earlier — during a Slam we want the morning recap before
+# matches start regardless of whether the last digest is barely outside
+# yesterday's window. 12h still rate-limits ad-hoc triggers (the admin
+# endpoint can't be hammered into back-to-back generations) but doesn't
+# block the daily morning slot when Slams are running.
+_MIN_REGEN_INTERVAL = timedelta(hours=12)
 
 # Default lookback when no previous digest exists. Roughly the "weekly"
 # behaviour we want for the first-ever run.
@@ -1054,7 +1057,7 @@ def generate_digest(
     verified human-supplied facts (milestones, retirements, etc.).
 
     Rate limit: refuses to generate when the last digest was published
-    within `_MIN_REGEN_INTERVAL` (24h) — unless `force=True`. The
+    within `_MIN_REGEN_INTERVAL` (12h) — unless `force=True`. The
     caller decides whether to alert the user that they need to wait.
     """
     now = datetime.utcnow()
@@ -1069,7 +1072,7 @@ def generate_digest(
         if age < _MIN_REGEN_INTERVAL:
             hours = _MIN_REGEN_INTERVAL - age
             log.info(
-                "digest rate-limit: last digest %s is %s old (< 24h), skipping",
+                "digest rate-limit: last digest %s is %s old (< 12h), skipping",
                 last.week_start, age,
             )
             return DigestResult(
