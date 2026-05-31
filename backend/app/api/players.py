@@ -73,6 +73,7 @@ async def get_player(slug: str, session: Session = Depends(get_session)):
         image_source=p.image_source,
         image_credit=p.image_credit,
         image_license_url=p.image_license_url,
+        hero_image_url=p.hero_image_url,
         first_name=p.first_name, last_name=p.last_name, birth_date=p.birth_date,
         height_cm=p.height_cm, plays=p.plays, turned_pro=p.turned_pro,
         career_high_rank=p.career_high_rank, bio=p.bio,
@@ -112,6 +113,7 @@ def player_images(
             credit=r.credit, license_url=r.license_url,
             width=r.width, height=r.height,
             is_primary=r.is_primary, is_hidden=r.is_hidden,
+            is_hero=r.is_hero, is_hero_eligible=r.is_hero_eligible,
         )
         for r in rows
     ]

@@ -73,6 +73,7 @@ export type PlayerDetail = PlayerSummary & {
   image_source: string | null;
   image_credit: string | null;
   image_license_url: string | null;
+  hero_image_url: string | null;
 };
 
 export type PlayerImage = {
@@ -86,6 +87,8 @@ export type PlayerImage = {
   height: number | null;
   is_primary: boolean;
   is_hidden: boolean;
+  is_hero?: boolean;
+  is_hero_eligible?: boolean;
 };
 
 export type MatchStatus =

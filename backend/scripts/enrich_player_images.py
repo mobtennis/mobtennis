@@ -90,9 +90,14 @@ def main() -> None:
                 log.exception("enrich failed for %s", player.slug)
                 continue
             n_new_images += new_count
+            # Always commit — even when no new rows were inserted, the
+            # enricher may have refreshed metadata (credit, dimensions,
+            # is_hero_eligible) on existing rows and re-synced the
+            # primary/hero pointers on the player. Skipping the commit
+            # silently discards those writes.
+            s.commit()
             if new_count > 0:
                 n_updated += 1
-                s.commit()
                 log.info(
                     "[%d/%d] %s ← %d new images (primary: %s)",
                     i, total, player.slug, new_count,

@@ -105,6 +105,15 @@ _FILENAME_DENY = (
     ".svg", ".gif",
 )
 
+# Filename markers that signal an image is a tight portrait crop, not
+# a landscape action shot. Used by the hero-eligibility heuristic so
+# the profile-page header band doesn't get filled with a center-
+# cropped chest/armpit area.
+_HERO_FILENAME_DENY = (
+    "(cropped)", "cropped)", "_cropped", "-cropped",
+    "portrait", "headshot", "face",
+)
+
 
 def _strip_html(s: str | None) -> str | None:
     if not s:
@@ -131,6 +140,32 @@ def _license_allowed(normalised: str | None) -> bool:
 def _filename_allowed(filename: str) -> bool:
     lower = filename.lower()
     return not any(b in lower for b in _FILENAME_DENY)
+
+
+def _is_hero_eligible(
+    filename: str, width: int | None, height: int | None,
+) -> bool:
+    """Heuristic: which images make a decent landscape header band?
+
+    Wants landscape aspect (width > height), enough resolution to fill
+    a desktop 1080px+ width band without pixelation, and a filename
+    that doesn't signal a tight crop.
+
+    Returns False on portraits, low-res images, and Wikipedia
+    "(cropped)" / "portrait" / "headshot" variants.
+    """
+    if not width or not height:
+        return False
+    if width < 1000:
+        return False
+    # Landscape: ratio of long edge to short edge between 1.2 and 2.5.
+    # Pure squares look squished in the band; ultrawides waste space
+    # cropping the player out.
+    ratio = width / height
+    if ratio < 1.2 or ratio > 2.5:
+        return False
+    lower = filename.lower()
+    return not any(b in lower for b in _HERO_FILENAME_DENY)
 
 
 def _title_from_wikipedia_url(url: str) -> str | None:
@@ -325,14 +360,17 @@ def _upsert_image(
     license_url: str | None,
     width: int | None,
     height: int | None,
+    filename: str,
     make_primary: bool,
 ) -> tuple[PlayerImage, bool]:
     """Insert a new PlayerImage row or refresh an existing one.
 
-    Existing-row updates only touch metadata (credit, license URL,
-    dimensions) — they NEVER toggle is_primary or is_hidden, which
-    are admin-controlled and sticky across re-runs.
+    Existing-row updates touch metadata (credit, license URL,
+    dimensions, hero-eligibility) — they NEVER toggle is_primary,
+    is_hero, or is_hidden, which are admin-controlled and sticky
+    across re-runs.
     """
+    hero_eligible = _is_hero_eligible(filename, width, height)
     existing = session.exec(
         select(PlayerImage).where(PlayerImage.url == url)
     ).first()
@@ -341,6 +379,9 @@ def _upsert_image(
         existing.license_url = license_url or existing.license_url
         existing.width = width or existing.width
         existing.height = height or existing.height
+        # Recompute hero-eligibility — heuristic may have improved
+        # between runs (we added the filter, etc.).
+        existing.is_hero_eligible = hero_eligible
         existing.updated_at = datetime.utcnow()
         session.add(existing)
         return existing, False
@@ -355,6 +396,7 @@ def _upsert_image(
         width=width,
         height=height,
         is_primary=make_primary,
+        is_hero_eligible=hero_eligible,
     )
     session.add(img)
     session.flush()  # surface .id for the caller
@@ -362,43 +404,62 @@ def _upsert_image(
 
 
 def _sync_primary_pointer(session: Session, player: Player) -> None:
-    """Player.image_url mirrors whichever PlayerImage is currently
-    is_primary AND not hidden. Called after any enrichment write or
-    admin flag change."""
-    primary = session.exec(
-        select(PlayerImage)
-        .where(
-            PlayerImage.player_id == player.id,
-            PlayerImage.is_primary == True,  # noqa: E712
-            PlayerImage.is_hidden == False,  # noqa: E712
-        )
-    ).first()
-    # If the chosen primary got hidden (admin override), fall back to
-    # the first non-hidden image from the strongest source (wikipedia
-    # > commons > api-tennis).
+    """Player.image_url + Player.hero_image_url mirror whichever
+    PlayerImage rows currently hold the is_primary and is_hero
+    flags. Called after any enrichment write or admin flag change.
+    """
+    all_images = session.exec(
+        select(PlayerImage).where(PlayerImage.player_id == player.id)
+    ).all()
+
+    # ----- Primary (headshot for avatars/match cards) -----
+    primary = next(
+        (i for i in all_images if i.is_primary and not i.is_hidden), None,
+    )
     if not primary:
         order = {"wikipedia": 0, "commons": 1, "api-tennis": 2, "manual": 3}
-        candidates = session.exec(
-            select(PlayerImage).where(
-                PlayerImage.player_id == player.id,
-                PlayerImage.is_hidden == False,  # noqa: E712
-            )
-        ).all()
-        if candidates:
+        non_hidden = [i for i in all_images if not i.is_hidden]
+        if non_hidden:
             primary = min(
-                candidates, key=lambda i: (order.get(i.source, 99), i.id),
+                non_hidden, key=lambda i: (order.get(i.source, 99), i.id),
             )
             primary.is_primary = True
             session.add(primary)
 
-    if primary:
-        if player.image_url != primary.url:
-            player.image_url = primary.url
-            player.image_source = primary.source
-            player.image_credit = primary.credit
-            player.image_license_url = primary.license_url
-            player.updated_at = datetime.utcnow()
-            session.add(player)
+    if primary and player.image_url != primary.url:
+        player.image_url = primary.url
+        player.image_source = primary.source
+        player.image_credit = primary.credit
+        player.image_license_url = primary.license_url
+        player.updated_at = datetime.utcnow()
+        session.add(player)
+
+    # ----- Hero (landscape action shot for the profile-page band) -----
+    # Admin-pinned hero wins; otherwise auto-pick the largest
+    # eligible image (biggest pixel area = sharpest at hero size).
+    # If nothing qualifies, hero_image_url stays null and the
+    # frontend falls back to the primary with bg-top cropping.
+    hero = next(
+        (i for i in all_images if i.is_hero and not i.is_hidden), None,
+    )
+    if not hero:
+        candidates = [
+            i for i in all_images
+            if i.is_hero_eligible and not i.is_hidden
+        ]
+        if candidates:
+            hero = max(
+                candidates,
+                key=lambda i: ((i.width or 0) * (i.height or 0), i.id),
+            )
+            hero.is_hero = True
+            session.add(hero)
+
+    new_hero_url = hero.url if hero else None
+    if player.hero_image_url != new_hero_url:
+        player.hero_image_url = new_hero_url
+        player.updated_at = datetime.utcnow()
+        session.add(player)
 
 
 def enrich_one(session: Session, player: Player, client: httpx.Client) -> int:
@@ -467,6 +528,7 @@ def enrich_one(session: Session, player: Player, client: httpx.Client) -> int:
             license_url=info["license_url"],
             width=info["width"],
             height=info["height"],
+            filename=filename,
             make_primary=make_primary,
         )
         if inserted:

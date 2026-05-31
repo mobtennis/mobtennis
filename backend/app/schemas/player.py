@@ -33,6 +33,10 @@ class PlayerDetail(PlayerSummary):
     image_source: str | None = None
     image_credit: str | None = None
     image_license_url: str | None = None
+    # Landscape action-shot variant for the profile-page hero band.
+    # Null when no landscape candidate is available; the frontend
+    # falls back to a top-anchored crop of `image_url`.
+    hero_image_url: str | None = None
 
 
 class PlayerImageView(BaseModel):
@@ -48,3 +52,5 @@ class PlayerImageView(BaseModel):
     height: int | None = None
     is_primary: bool
     is_hidden: bool
+    is_hero: bool = False
+    is_hero_eligible: bool = False

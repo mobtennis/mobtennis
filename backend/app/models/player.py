@@ -49,6 +49,12 @@ class Player(SQLModel, table=True):
     # Public URL of the license deed (e.g. https://creativecommons.org/
     # licenses/by-sa/2.0). Linked from the credit so anyone can verify.
     image_license_url: str | None = None
+    # Landscape action-shot variant used as the profile-page background
+    # band. Picked separately from `image_url` because Wikipedia
+    # infobox photos are typically tight portrait crops — center-
+    # cropping those into a 176px header band landed on armpits and
+    # cleavage. Falls back to image_url at render time when null.
+    hero_image_url: str | None = None
     bio: str | None = None
 
     # Wikidata-sourced — populated for top-N ranked players.

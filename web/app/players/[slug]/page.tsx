@@ -199,9 +199,14 @@ function PlayerHero({ player }: { player: PlayerDetail }) {
     <header className="relative overflow-hidden rounded-lg border border-ink-700 bg-ink-900 shadow-card">
       {hasPhoto ? (
         <>
+          {/* bg-top instead of bg-center: portrait-shaped infobox
+              photos crop to chest/torso under bg-center, which got
+              awkward fast. Top-anchoring keeps the face in the
+              visible band. Proper fix below picks a landscape hero
+              when one exists. */}
           <div
-            className="h-44 bg-cover bg-center"
-            style={{ backgroundImage: `url(${player.image_url})` }}
+            className="h-44 bg-cover bg-top"
+            style={{ backgroundImage: `url(${player.hero_image_url ?? player.image_url})` }}
             aria-hidden
           />
           <div className="absolute inset-0 bg-gradient-to-t from-ink-900 via-ink-900/60 to-transparent" />

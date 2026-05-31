@@ -200,6 +200,48 @@ def set_player_image_primary(
         source_url=target.source_url, credit=target.credit,
         license_url=target.license_url, width=target.width, height=target.height,
         is_primary=target.is_primary, is_hidden=target.is_hidden,
+        is_hero=target.is_hero, is_hero_eligible=target.is_hero_eligible,
+    )
+
+
+@router.post(
+    "/players/{slug}/images/{image_id}/hero",
+    response_model=PlayerImageView,
+    dependencies=[Depends(_require_admin_key)],
+)
+def set_player_image_hero(
+    slug: str, image_id: int, session: Session = Depends(get_session),
+):
+    """Mark this image as the hero (landscape header band) for the
+    player. Demotes the prior hero. Bypasses the is_hero_eligible
+    heuristic so admins can override the auto-pick for a portrait
+    image they actively want (e.g. a stylised studio shot that
+    crops well even without classifier approval)."""
+    player, target = _load_player_image(session, slug, image_id)
+    if target.is_hidden:
+        raise HTTPException(400, "Cannot set a hidden image as hero; unhide it first")
+
+    others = session.exec(
+        select(PlayerImage).where(
+            PlayerImage.player_id == player.id,
+            PlayerImage.is_hero == True,  # noqa: E712
+            PlayerImage.id != target.id,
+        )
+    ).all()
+    for o in others:
+        o.is_hero = False
+        session.add(o)
+    target.is_hero = True
+    session.add(target)
+    _sync_primary_pointer(session, player)
+    session.commit()
+    session.refresh(target)
+    return PlayerImageView(
+        id=target.id, url=target.url, source=target.source,
+        source_url=target.source_url, credit=target.credit,
+        license_url=target.license_url, width=target.width, height=target.height,
+        is_primary=target.is_primary, is_hidden=target.is_hidden,
+        is_hero=target.is_hero, is_hero_eligible=target.is_hero_eligible,
     )
 
 
@@ -229,4 +271,5 @@ def set_player_image_hidden(
         source_url=target.source_url, credit=target.credit,
         license_url=target.license_url, width=target.width, height=target.height,
         is_primary=target.is_primary, is_hidden=target.is_hidden,
+        is_hero=target.is_hero, is_hero_eligible=target.is_hero_eligible,
     )

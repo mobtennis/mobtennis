@@ -65,8 +65,21 @@ export function ImageRow({
               primary
             </span>
           )}
+          {image.is_hero && (
+            <span className="rounded bg-emerald-600/30 px-1.5 py-0.5 text-emerald-300">
+              hero
+            </span>
+          )}
+          {image.is_hero_eligible && !image.is_hero && (
+            <span className="rounded bg-ink-800 px-1.5 py-0.5">hero-ok</span>
+          )}
           {image.is_hidden && (
             <span className="rounded bg-ink-800 px-1.5 py-0.5">hidden</span>
+          )}
+          {image.width && image.height && (
+            <span className="rounded bg-ink-800 px-1.5 py-0.5">
+              {image.width}×{image.height}
+            </span>
           )}
         </div>
         {image.credit && (
@@ -83,6 +96,18 @@ export function ImageRow({
               className="rounded border border-accent/60 px-2 py-1 text-[11px] font-medium text-accent hover:bg-accent/10 disabled:opacity-50"
             >
               Set primary
+            </button>
+          )}
+          {!image.is_hero && !image.is_hidden && (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() =>
+                post(`/api/admin/players/${slug}/images/${image.id}/hero`)
+              }
+              className="rounded border border-emerald-600/60 px-2 py-1 text-[11px] font-medium text-emerald-400 hover:bg-emerald-600/10 disabled:opacity-50"
+            >
+              Set hero
             </button>
           )}
           {!image.is_hidden ? (

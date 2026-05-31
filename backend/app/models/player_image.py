@@ -63,6 +63,16 @@ class PlayerImage(SQLModel, table=True):
     #                 re-runs of the enricher — never auto-resurrected.
     is_primary: bool = Field(default=False, index=True)
     is_hidden: bool = False
+    # Hero-band candidate: landscape-aspect action shots that work in
+    # the 176px-tall background band on the player profile page.
+    # Portrait headshots (the typical infobox lead) get eligible=False
+    # so the hero picker doesn't choose one and crop to a chest area.
+    is_hero_eligible: bool = False
+    # The chosen hero for this player. Exactly one row per player
+    # carries this flag; null hero_image_url on Player when none of
+    # the player's images are eligible (we'd rather no hero band than
+    # an awkward crop).
+    is_hero: bool = Field(default=False, index=True)
 
     discovered_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
