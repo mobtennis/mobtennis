@@ -28,6 +28,7 @@ export function MatchCard({ match, dense = false }: { match: MatchSummary; dense
               <>
                 <PlayerRow
                   player={match.player1}
+                  seed={match.player1_seed}
                   sets={sets.map((s) => s.split("-")[0])}
                   isServing={match.server_slot === 1}
                   isWinner={finished && match.winner_slot === 1}
@@ -36,6 +37,7 @@ export function MatchCard({ match, dense = false }: { match: MatchSummary; dense
                 />
                 <PlayerRow
                   player={match.player2}
+                  seed={match.player2_seed}
                   sets={sets.map((s) => s.split("-")[1] ?? "")}
                   isServing={match.server_slot === 2}
                   isWinner={finished && match.winner_slot === 2}
@@ -76,6 +78,7 @@ export function MatchCard({ match, dense = false }: { match: MatchSummary; dense
 
 function PlayerRow({
   player,
+  seed,
   sets,
   isServing,
   isWinner = false,
@@ -83,6 +86,7 @@ function PlayerRow({
   gamePoints = null,
 }: {
   player: MatchSummary["player1"];
+  seed?: number | null;
   sets: string[];
   isServing: boolean;
   isWinner?: boolean;
@@ -97,6 +101,11 @@ function PlayerRow({
       <PlayerAvatar name={player.full_name} imageUrl={player.image_url} countryCode={player.country_code} />
       <span className={`min-w-0 flex-1 truncate text-sm ${isWinner ? "font-bold text-text-primary" : "font-medium"}`}>
         {isWinner && <WinnerCheck />}
+        {seed != null && (
+          <span className="mr-1 text-[11px] font-semibold tnum text-text-muted">
+            [{seed}]
+          </span>
+        )}
         {player.full_name}
         {isServing && (
           <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-accent align-middle" aria-label="serving" />

@@ -26,6 +26,7 @@ export function MatchCard({ match }: { match: MatchSummary }) {
             <View className="min-w-0 flex-1 flex-col gap-1.5">
               <PlayerRow
                 player={match.player1}
+                seed={match.player1_seed}
                 sets={sets.map((s) => s.split("-")[0])}
                 isServing={match.server_slot === 1}
                 isWinner={finished && match.winner_slot === 1}
@@ -34,6 +35,7 @@ export function MatchCard({ match }: { match: MatchSummary }) {
               />
               <PlayerRow
                 player={match.player2}
+                seed={match.player2_seed}
                 sets={sets.map((s) => s.split("-")[1] ?? "")}
                 isServing={match.server_slot === 2}
                 isWinner={finished && match.winner_slot === 2}
@@ -76,6 +78,7 @@ function PlayerRow({
   gamePoints = null,
 }: {
   player: PlayerSummary | null;
+  seed?: number | null;
   sets: string[];
   isServing: boolean;
   isWinner?: boolean;
@@ -90,6 +93,9 @@ function PlayerRow({
       <PlayerAvatar name={player.full_name} imageUrl={player.image_url} countryCode={player.country_code} />
       <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
         {isWinner && <WinnerCheck />}
+        {seed != null && (
+          <Text className="text-[11px] font-semibold text-text-muted">[{seed}]</Text>
+        )}
         <Text
           className={`flex-1 text-sm text-text-primary ${isWinner ? "font-bold" : "font-medium"}`}
           numberOfLines={1}
