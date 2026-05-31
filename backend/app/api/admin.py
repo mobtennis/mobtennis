@@ -28,8 +28,12 @@ from sqlmodel import Session, select
 
 from app.db.session import get_session
 from app.models.digest import EditorialDigest
+from app.models.player import Player
+from app.models.player_image import PlayerImage
 from app.schemas.digest import CampaignBrief, CampaignBriefsResponse
+from app.schemas.player import PlayerImageView
 from app.services.editorial_digest import generate_digest
+from app.services.players_image_enrich import _sync_primary_pointer
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -137,4 +141,92 @@ def generate_ad_hoc_digest(
         message=result.message,
         week_start=result.row.week_start if result.row else None,
         headline=result.row.headline if result.row else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Player image management
+# ---------------------------------------------------------------------------
+
+
+def _load_player_image(
+    session: Session, slug: str, image_id: int,
+) -> tuple[Player, PlayerImage]:
+    player = session.exec(select(Player).where(Player.slug == slug)).first()
+    if not player:
+        raise HTTPException(404, "Player not found")
+    img = session.exec(
+        select(PlayerImage).where(
+            PlayerImage.id == image_id,
+            PlayerImage.player_id == player.id,
+        )
+    ).first()
+    if not img:
+        raise HTTPException(404, "Image not found for that player")
+    return player, img
+
+
+@router.post(
+    "/players/{slug}/images/{image_id}/primary",
+    response_model=PlayerImageView,
+    dependencies=[Depends(_require_admin_key)],
+)
+def set_player_image_primary(
+    slug: str, image_id: int, session: Session = Depends(get_session),
+):
+    """Mark this image as the primary for the player. Demotes whichever
+    image was primary before; re-syncs Player.image_url to the new one."""
+    player, target = _load_player_image(session, slug, image_id)
+    if target.is_hidden:
+        raise HTTPException(400, "Cannot set a hidden image as primary; unhide it first")
+
+    others = session.exec(
+        select(PlayerImage).where(
+            PlayerImage.player_id == player.id,
+            PlayerImage.is_primary == True,  # noqa: E712
+            PlayerImage.id != target.id,
+        )
+    ).all()
+    for o in others:
+        o.is_primary = False
+        session.add(o)
+    target.is_primary = True
+    session.add(target)
+    _sync_primary_pointer(session, player)
+    session.commit()
+    session.refresh(target)
+    return PlayerImageView(
+        id=target.id, url=target.url, source=target.source,
+        source_url=target.source_url, credit=target.credit,
+        license_url=target.license_url, width=target.width, height=target.height,
+        is_primary=target.is_primary, is_hidden=target.is_hidden,
+    )
+
+
+@router.post(
+    "/players/{slug}/images/{image_id}/hidden",
+    response_model=PlayerImageView,
+    dependencies=[Depends(_require_admin_key)],
+)
+def set_player_image_hidden(
+    slug: str, image_id: int,
+    hidden: bool = Query(True),
+    session: Session = Depends(get_session),
+):
+    """Hide or unhide an image. Hiding the current primary triggers a
+    re-sync that picks the next-best non-hidden image as primary so
+    the public site never serves an image we hid."""
+    player, target = _load_player_image(session, slug, image_id)
+    target.is_hidden = hidden
+    if hidden and target.is_primary:
+        target.is_primary = False
+    session.add(target)
+    _sync_primary_pointer(session, player)
+    session.commit()
+    session.refresh(target)
+    return PlayerImageView(
+        id=target.id, url=target.url, source=target.source,
+        source_url=target.source_url, credit=target.credit,
+        license_url=target.license_url, width=target.width, height=target.height,
+        is_primary=target.is_primary, is_hidden=target.is_hidden,
     )

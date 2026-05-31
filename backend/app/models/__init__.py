@@ -4,6 +4,7 @@ from app.models.match import Match, MatchStatus, Surface
 from app.models.match_follow import MatchFollow, MatchFollowGranularity
 from app.models.news import NewsItem
 from app.models.player import Player, Tour
+from app.models.player_image import PlayerImage
 from app.models.push_token import PushToken
 from app.models.ranking import Ranking
 from app.models.tournament import Tournament, TournamentCategory
@@ -18,6 +19,7 @@ __all__ = [
     "MatchStatus",
     "NewsItem",
     "Player",
+    "PlayerImage",
     "PushToken",
     "Ranking",
     "Surface",

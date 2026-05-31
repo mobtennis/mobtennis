@@ -9,11 +9,12 @@ from app.api._helpers import match_to_summary
 from app.db.session import get_session
 from app.models.match import Match, MatchStatus
 from app.models.player import Player, Tour
+from app.models.player_image import PlayerImage
 from app.models.ranking import Ranking
 from app.models.tournament import Tournament
 from app.schemas.history import TournamentHistoryEntry
 from app.schemas.match import MatchSummary
-from app.schemas.player import PlayerDetail, PlayerSummary
+from app.schemas.player import PlayerDetail, PlayerImageView, PlayerSummary
 from app.schemas.player_snapshot import (
     PlayerSnapshot,
     SnapshotTitle,
@@ -69,6 +70,9 @@ async def get_player(slug: str, session: Session = Depends(get_session)):
         slug=p.slug, full_name=p.full_name, tour=p.tour,
         country_code=p.country_code, current_rank=p.current_rank,
         image_url=(p.image_url or None),  # collapse "" → None for the JSON shape
+        image_source=p.image_source,
+        image_credit=p.image_credit,
+        image_license_url=p.image_license_url,
         first_name=p.first_name, last_name=p.last_name, birth_date=p.birth_date,
         height_cm=p.height_cm, plays=p.plays, turned_pro=p.turned_pro,
         career_high_rank=p.career_high_rank, bio=p.bio,
@@ -77,6 +81,40 @@ async def get_player(slug: str, session: Session = Depends(get_session)):
         twitter_handle=p.twitter_handle,
         instagram_latest_post_url=p.instagram_latest_post_url,
     )
+
+
+@router.get("/{slug}/images", response_model=list[PlayerImageView])
+def player_images(
+    slug: str,
+    include_hidden: bool = False,
+    session: Session = Depends(get_session),
+):
+    """All photos we have for this player. Used by the profile-page
+    collage strip (non-primary, non-hidden only) and by the admin
+    image-manager (include_hidden=true to see everything)."""
+    p = session.exec(select(Player).where(Player.slug == slug)).first()
+    if not p:
+        raise HTTPException(404, "Player not found")
+    stmt = select(PlayerImage).where(PlayerImage.player_id == p.id)
+    if not include_hidden:
+        stmt = stmt.where(PlayerImage.is_hidden == False)  # noqa: E712
+    # Primary first, then by source priority (wikipedia > commons >
+    # api-tennis > manual), then by insertion order. The frontend can
+    # take rows[1:] for a "more photos" strip without resorting.
+    rows = session.exec(
+        stmt.order_by(
+            PlayerImage.is_primary.desc(), PlayerImage.id.asc(),
+        )
+    ).all()
+    return [
+        PlayerImageView(
+            id=r.id, url=r.url, source=r.source, source_url=r.source_url,
+            credit=r.credit, license_url=r.license_url,
+            width=r.width, height=r.height,
+            is_primary=r.is_primary, is_hidden=r.is_hidden,
+        )
+        for r in rows
+    ]
 
 
 @router.get("/{slug}/matches", response_model=list[MatchSummary])

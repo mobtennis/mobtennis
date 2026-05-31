@@ -38,6 +38,17 @@ class Player(SQLModel, table=True):
     career_high_rank: int | None = None
 
     image_url: str | None = None
+    # Provenance of `image_url`: "wikipedia", "api-tennis", "manual", …
+    # Drives whether we render a photo credit. api-tennis images are
+    # editorial-feed thumbs (no credit needed in our use); Wikipedia
+    # images are CC-BY / CC-BY-SA and require attribution.
+    image_source: str | None = None
+    # Photographer + license short-name, e.g. "Carine06 · CC BY-SA 2.0".
+    # Pre-formatted for direct display.
+    image_credit: str | None = None
+    # Public URL of the license deed (e.g. https://creativecommons.org/
+    # licenses/by-sa/2.0). Linked from the credit so anyone can verify.
+    image_license_url: str | None = None
     bio: str | None = None
 
     # Wikidata-sourced — populated for top-N ranked players.

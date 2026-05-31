@@ -7,6 +7,7 @@ import {
   type MatchSummary,
   type NewsItemSummary,
   type PlayerDetail,
+  type PlayerImage as PlayerImageRef,
   type PlayerSnapshot,
   type TournamentHistoryEntry,
   type VideoItemSummary,
@@ -56,7 +57,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ slug: s
   const player = await api<PlayerDetail>(`/api/players/${slug}`).catch(() => null);
   if (!player) notFound();
 
-  const [matches, news, videos, history, snapshot] = await Promise.all([
+  const [matches, news, videos, history, snapshot, images] = await Promise.all([
     // 15s revalidate. SSE refresh ticks against this cache — anything
     // tighter and the backend gets pounded by routine revalidations.
     api<MatchSummary[]>(`/api/players/${slug}/matches?limit=20`, { revalidate: 15 }).catch(() => []),
@@ -70,6 +71,12 @@ export default async function PlayerPage({ params }: { params: Promise<{ slug: s
     // concern, fresh enough that wrong claims don't stick for an hour
     // after a fix ships.
     api<PlayerSnapshot>(`/api/players/${slug}/snapshot`, { revalidate: 600 }).catch(() => null),
+    // Photo collection. Cached aggressively — Wikipedia editors add
+    // new images on a per-tournament cadence, so an hourly window
+    // catches them well within the freshness budget.
+    api<PlayerImageRef[]>(`/api/players/${slug}/images`, { revalidate: 3600 }).catch(
+      () => [] as PlayerImageRef[],
+    ),
   ]);
   const feed = mergeFeed(news, videos);
 
@@ -104,6 +111,9 @@ export default async function PlayerPage({ params }: { params: Promise<{ slug: s
           )}
         </section>
       )}
+
+      <PlayerPhotoStrip images={images} fullName={player.full_name} />
+
 
       <dl className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
         {player.birth_date && <Stat label="Born" value={new Date(player.birth_date).toLocaleDateString()} />}
@@ -204,6 +214,16 @@ function PlayerHero({ player }: { player: PlayerDetail }) {
             />
             <PlayerHeading player={player} />
           </div>
+          {/* Photo credit — required by CC-BY family licenses. Only
+              renders when the image came from a source that demands
+              attribution (Wikipedia/Commons); api-tennis thumbs and
+              manual uploads stay credit-less. */}
+          {player.image_source === "wikipedia" && player.image_credit && (
+            <PlayerPhotoCredit
+              credit={player.image_credit}
+              licenseUrl={player.image_license_url}
+            />
+          )}
         </>
       ) : (
         <div className="flex items-center gap-4 p-4">
@@ -217,6 +237,43 @@ function PlayerHero({ player }: { player: PlayerDetail }) {
         </div>
       )}
     </header>
+  );
+}
+
+
+function PlayerPhotoCredit({
+  credit,
+  licenseUrl,
+}: {
+  credit: string;
+  licenseUrl: string | null;
+}) {
+  // Split on the " · " the backend inserted between artist and
+  // license short-name so we can link only the license portion.
+  const parts = credit.split(" · ");
+  const artist = parts.length > 1 ? parts[0] : credit;
+  const license = parts.length > 1 ? parts[1] : null;
+  return (
+    <div className="relative px-4 pb-3 pt-1 text-[11px] text-text-muted">
+      Photo: {artist}
+      {license && (
+        <>
+          {" · "}
+          {licenseUrl ? (
+            <a
+              href={licenseUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-dotted underline-offset-2 hover:text-text-secondary"
+            >
+              {license}
+            </a>
+          ) : (
+            license
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -252,5 +309,51 @@ function Stat({ label, value }: { label: string; value: string }) {
       <dt className="text-[10px] font-bold uppercase tracking-wider text-text-muted">{label}</dt>
       <dd className="mt-0.5 text-sm font-medium">{value}</dd>
     </div>
+  );
+}
+
+
+function PlayerPhotoStrip({
+  images,
+  fullName,
+}: {
+  images: PlayerImageRef[];
+  fullName: string;
+}) {
+  // Strip primary + hidden; show only alternates. A "More photos"
+  // section that just re-shows the avatar is silly.
+  const alts = images.filter((i) => !i.is_primary && !i.is_hidden);
+  if (alts.length < 3) return null;
+  // Cap to 6 — keeps the strip from dominating mid-page on prolific
+  // players (Margaret Court has 30+; nobody scrolls through that
+  // here, the admin tool is for the full set).
+  const shown = alts.slice(0, 6);
+  return (
+    <section>
+      <SectionHeader
+        title="More photos"
+        subtitle="From Wikimedia Commons"
+      />
+      <div className="mt-2 grid grid-cols-3 gap-2 md:grid-cols-6">
+        {shown.map((img) => (
+          <a
+            key={img.id}
+            href={img.source_url ?? img.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group relative aspect-[3/4] overflow-hidden rounded-md border border-ink-700 bg-ink-900"
+            title={img.credit ?? undefined}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={img.url}
+              alt={fullName}
+              className="h-full w-full object-cover transition-opacity group-hover:opacity-90"
+              loading="lazy"
+            />
+          </a>
+        ))}
+      </div>
+    </section>
   );
 }

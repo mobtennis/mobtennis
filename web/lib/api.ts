@@ -70,6 +70,22 @@ export type PlayerDetail = PlayerSummary & {
   instagram_handle: string | null;
   twitter_handle: string | null;
   instagram_latest_post_url: string | null;
+  image_source: string | null;
+  image_credit: string | null;
+  image_license_url: string | null;
+};
+
+export type PlayerImage = {
+  id: number;
+  url: string;
+  source: string;
+  source_url: string | null;
+  credit: string | null;
+  license_url: string | null;
+  width: number | null;
+  height: number | null;
+  is_primary: boolean;
+  is_hidden: boolean;
 };
 
 export type MatchStatus =

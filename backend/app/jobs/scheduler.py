@@ -493,6 +493,41 @@ async def _enrich_player_bios_job() -> None:
         log.exception("player bio enrich failed")
 
 
+def _enrich_player_images_job() -> None:
+    """Pull fresh Wikipedia / Commons photos for ranked players.
+
+    Wikipedia editors continuously add new photos as players play
+    tournaments. Stale image_url values are the difference between
+    a player profile that feels current vs. one that shows them
+    five years younger.
+
+    Weekly cadence on ranked players only. Sequential (polite 300ms
+    between API calls) — finishes in 30-60 minutes for ~600 rows.
+    """
+    from app.services.players_image_enrich import build_client, enrich_one
+    try:
+        client = build_client()
+        with Session(engine) as session:
+            stmt = (
+                select(Player)
+                .where(Player.current_rank.is_not(None))
+                .order_by(Player.current_rank)
+            )
+            players = session.exec(stmt).all()
+            n_new = 0
+            for p in players:
+                try:
+                    n_new += enrich_one(session, p, client) or 0
+                except Exception:
+                    log.exception("player image enrich failed for %s", p.slug)
+                    continue
+                session.commit()
+        client.close()
+        log.info("player images: scanned %d ranked players, %d new", len(players), n_new)
+    except Exception:
+        log.exception("player image enrich job failed")
+
+
 async def _scrape_draws_job() -> None:
     """Pull Wikipedia bracket structure for top-tier in-progress tournaments
     via the new wiki_brackets pipeline.
@@ -804,6 +839,18 @@ def start_scheduler() -> None:
         coalesce=True,
     )
     # Boot trigger removed — weekly cadence is fine.
+
+    # Player photo collection (Wikipedia infobox + article + Commons
+    # category). Weekly — new photos appear during tournaments as
+    # editors upload event galleries; weekly catches them within days
+    # of upload without battering the public MediaWiki API.
+    _scheduler.add_job(
+        _enrich_player_images_job,
+        IntervalTrigger(weeks=1),
+        id="enrich_player_images",
+        max_instances=1,
+        coalesce=True,
+    )
 
     # Tournament enrichment (Wikipedia blurbs + images) — runs after catalog
     # so there's something to enrich. Hourly sweep: each run handles up to 200
