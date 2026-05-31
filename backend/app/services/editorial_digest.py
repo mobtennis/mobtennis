@@ -131,6 +131,7 @@ def _collect_news(session: Session, start_dt: datetime, end_dt: datetime) -> lis
             "published_at": n.published_at.isoformat(timespec="minutes"),
             "title": n.title.strip(),
             "summary": _strip_html(n.summary),
+            "url": n.source_url,
         })
         if len(out) >= _NEWS_CAP:
             break
@@ -582,6 +583,11 @@ CAMPAIGN BRIEFS:
 - Stay strictly within the supplied facts. No invented stories, scores, players, or tournament names. Same rules as the body.
 - Ad copy goal: drive a click. Honest, factual, no clickbait, no superlatives the data doesn't support. Mention mob.tennis or the value (free, no sign-up, live scores) in at least one headline.
 
+NEWS SOURCES:
+- The recap is editorial paraphrase, not original reporting. When a sentence's facts came primarily from one of the supplied News headlines (an injury, a withdrawal, a press conference, an off-court development), record the source in the `news_sources` tool field so readers can read the original article.
+- Only include sources you actually drew from. If the recap leans on 3 headlines, list 3. If the week was all match results and you didn't lean on any news, return an empty list.
+- Each source is `{title, url, source}` — copy these verbatim from the News block. Do NOT invent URLs or rewrite titles.
+
 EDITORIAL NOTES:
 - If the user prompt contains an `EDITORIAL NOTES` section, treat those facts as verified human-supplied context. Weave them naturally into the recap when the prose mentions the related player, tournament, or event. Notes are not inventions: they are additional truths to include.
 - Do not invent any other context beyond the supplied facts + notes.
@@ -653,12 +659,16 @@ def _build_user_prompt(facts: dict) -> str:
             "consequential story here (e.g. a top-10 withdrawal, an "
             "injury, a retirement) can outrank a 1000-tier result for "
             "the lead. Multiple headlines about the same story signal "
-            "its importance:"
+            "its importance. Each item ends with a URL — when you write a "
+            "sentence whose facts came primarily from one of these "
+            "headlines, list its URL in the `news_sources` tool field so "
+            "readers can follow the original reporting:"
         )
         for n in facts["news"]:
             lines.append(
                 f"  - [{n['published_at']} {n['source']}] {n['title']}"
                 + (f"\n      {n['summary']}" if n.get("summary") else "")
+                + (f"\n      URL: {n['url']}" if n.get("url") else "")
             )
     lines.append("")
     lines.append("Tournaments active at week-end or starting next week:")
@@ -721,6 +731,25 @@ _TOOL_SPEC = {
                     "LINKS section of the user prompt to anchor first mentions "
                     "of each player and tournament. No other markdown."
                 ),
+            },
+            "news_sources": {
+                "type": "array",
+                "description": (
+                    "Source-article citations. List ONLY the News headlines "
+                    "whose facts you actually leaned on in writing the body. "
+                    "Copy `title`, `url`, and `source` verbatim from the "
+                    "News block of the user prompt. Empty list is fine when "
+                    "the recap is driven by match results alone."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "url": {"type": "string"},
+                        "source": {"type": "string"},
+                    },
+                    "required": ["title", "url", "source"],
+                },
             },
             "campaign_briefs": {
                 "type": "array",
@@ -802,17 +831,18 @@ _TOOL_SPEC = {
                 },
             },
         },
-        "required": ["headline", "body", "campaign_briefs"],
+        "required": ["headline", "body", "campaign_briefs", "news_sources"],
     },
 }
 
 
-def _call_claude(facts: dict) -> tuple[str, str, list[dict]] | None:
-    """Return (headline, body, campaign_briefs) or None if the call
-    fails / API key missing. Caller decides whether to skip or raise.
+def _call_claude(facts: dict) -> tuple[str, str, list[dict], list[dict]] | None:
+    """Return (headline, body, campaign_briefs, news_sources) or None
+    if the call fails / API key missing. Caller decides whether to
+    skip or raise.
 
-    `campaign_briefs` is always a list — empty if the model declined
-    or the field is malformed."""
+    `campaign_briefs` and `news_sources` are always lists — empty if
+    the model declined or the field is malformed."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         log.warning("ANTHROPIC_API_KEY not set — skipping digest generation")
@@ -870,8 +900,36 @@ def _call_claude(facts: dict) -> tuple[str, str, list[dict]] | None:
                 allowed_urls=allowed,
                 fallback_url=digest_url,
             )
+            # Validate news_sources against the URLs we offered — guards
+            # against the model inventing a URL or paraphrasing the
+            # title. The URL must match exactly (after stripping) one of
+            # the news items we passed in.
+            news_offered = {
+                (n.get("url") or "").strip(): n
+                for n in (facts.get("news") or [])
+                if n.get("url")
+            }
+            news_raw = payload.get("news_sources") or []
+            news_sources: list[dict] = []
+            if isinstance(news_raw, list):
+                seen_urls: set[str] = set()
+                for item in news_raw:
+                    if not isinstance(item, dict):
+                        continue
+                    url = (item.get("url") or "").strip()
+                    if not url or url in seen_urls or url not in news_offered:
+                        continue
+                    seen_urls.add(url)
+                    # Trust the offered values over what the LLM repeated
+                    # back — model paraphrases sometimes drift a few chars.
+                    canon = news_offered[url]
+                    news_sources.append({
+                        "title": canon.get("title", item.get("title", "")),
+                        "url": url,
+                        "source": canon.get("source", item.get("source", "")),
+                    })
             if headline and body:
-                return headline, body, briefs
+                return headline, body, briefs, news_sources
     log.warning(
         "Claude returned no usable tool_use block for window %s",
         facts.get("anchor_date") or facts.get("week_start"),
@@ -1145,14 +1203,19 @@ def generate_digest(
             None, status="failed",
             message="LLM call failed or returned no usable response.",
         )
-    headline, body, campaign_briefs = result
+    headline, body, campaign_briefs, news_sources = result
     body = sanitize_body_links(body, facts.get("links", {}))
     briefs_blob = json.dumps(campaign_briefs) if campaign_briefs else None
+    # Pack the LLM-self-reported source citations into source_json
+    # alongside the input facts — readers see them in the digest UI,
+    # and audits get the model's own view of which news it used.
+    facts_with_sources = dict(facts)
+    facts_with_sources["news_sources"] = news_sources
 
     if same_anchor and force:
         same_anchor.headline = headline
         same_anchor.body_md = body
-        same_anchor.source_json = json.dumps(facts)
+        same_anchor.source_json = json.dumps(facts_with_sources)
         same_anchor.campaign_briefs_json = briefs_blob
         same_anchor.model_name = MODEL_NAME
         same_anchor.period_start = period_start
@@ -1169,7 +1232,7 @@ def generate_digest(
         period_end=period_end,
         headline=headline,
         body_md=body,
-        source_json=json.dumps(facts),
+        source_json=json.dumps(facts_with_sources),
         campaign_briefs_json=briefs_blob,
         model_name=MODEL_NAME,
     )

@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -5,7 +6,7 @@ from sqlmodel import Session, select
 
 from app.db.session import get_session
 from app.models.digest import EditorialDigest
-from app.schemas.digest import DigestDetail, DigestSummary
+from app.schemas.digest import DigestDetail, DigestSummary, NewsSource
 
 router = APIRouter(prefix="/api/digests", tags=["digests"])
 
@@ -53,10 +54,28 @@ def get_digest(week_start: date, session: Session = Depends(get_session)):
 
 
 def _to_detail(row: EditorialDigest) -> DigestDetail:
+    # `news_sources` is stamped into source_json when the LLM cites
+    # specific upstream headlines. Older rows predate the field, so
+    # missing / malformed JSON falls back to an empty list.
+    sources: list[NewsSource] = []
+    if row.source_json:
+        try:
+            parsed = json.loads(row.source_json)
+            for item in (parsed.get("news_sources") or []):
+                if not isinstance(item, dict):
+                    continue
+                url = (item.get("url") or "").strip()
+                title = (item.get("title") or "").strip()
+                src = (item.get("source") or "").strip()
+                if url and title:
+                    sources.append(NewsSource(title=title, url=url, source=src))
+        except (ValueError, AttributeError):
+            sources = []
     return DigestDetail(
         week_start=row.week_start,
         headline=row.headline,
         generated_at=row.generated_at,
         body_md=row.body_md,
         model_name=row.model_name,
+        news_sources=sources,
     )

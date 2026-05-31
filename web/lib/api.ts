@@ -383,9 +383,16 @@ export type DigestSummary = {
   generated_at: string;
 };
 
+export type NewsSource = {
+  title: string;
+  url: string;
+  source: string;
+};
+
 export type DigestDetail = DigestSummary & {
   body_md: string;
   model_name: string;
+  news_sources: NewsSource[];
 };
 
 export type CampaignBrief = {

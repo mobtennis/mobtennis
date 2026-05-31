@@ -81,6 +81,35 @@ export default async function DigestWeekPage({
             real internal links. No other markdown is supported by
             design — the body is a single flowing paragraph. */}
         <DigestBody body={digest.body_md} />
+
+        {/* Sources block: outbound credit to upstream news articles the
+            LLM cited. Visible attribution serves both honesty (the
+            off-court facts aren't our reporting) and reader value
+            (anyone curious can follow the link for the full story). */}
+        {digest.news_sources?.length > 0 && (
+          <div className="mt-5 border-t border-ink-700 pt-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+              Sources
+            </div>
+            <ul className="mt-2 space-y-1.5 text-sm">
+              {digest.news_sources.map((s) => (
+                <li key={s.url} className="leading-snug">
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent hover:text-accent-dim hover:underline"
+                  >
+                    {s.title}
+                  </a>
+                  {s.source && (
+                    <span className="ml-1 text-xs text-text-muted">— {s.source}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </article>
 
       <nav className="flex items-center justify-between gap-3">

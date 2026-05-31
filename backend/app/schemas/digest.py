@@ -10,9 +10,23 @@ class DigestSummary(BaseModel):
     generated_at: datetime
 
 
+class NewsSource(BaseModel):
+    """A single news article the LLM cited while writing the digest.
+
+    The recap paraphrases off-court news (injuries, withdrawals, press
+    conferences). When the body leans on a specific headline, we render
+    a link to the original article so readers can read further and we
+    visibly credit the upstream publisher.
+    """
+    title: str
+    url: str
+    source: str  # publisher name, e.g. "Reuters", "tennis.com"
+
+
 class DigestDetail(DigestSummary):
     body_md: str
     model_name: str
+    news_sources: list[NewsSource] = []
 
 
 class CampaignBrief(BaseModel):
