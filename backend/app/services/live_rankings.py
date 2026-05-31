@@ -41,7 +41,9 @@ from app.models.player import Player, Tour
 from app.models.ranking import Ranking
 from app.models.tournament import Tournament
 from app.services.ranking_points import available_for_round, points_for_result
-from app.services.rounds import compute_player_result, round_abbrev, round_depth
+from app.services.rounds import (
+    compute_player_result, round_abbrev, round_depth, select_deepest_match,
+)
 
 log = logging.getLogger(__name__)
 
@@ -282,7 +284,13 @@ def _compute_earned(
     if not matches:
         return 0
     # Find the deepest round and whether the player won that match.
-    deepest_match = max(matches, key=lambda m: round_depth(m.round))
+    # select_deepest_match guards against the api-tennis verbose
+    # "<Tournament> - Final" mislabel (qualifying-bracket finals)
+    # outranking real R128 results — without it, qualifiers who lost
+    # in R128 would be projected as Slam champions worth 2000 points.
+    deepest_match = select_deepest_match(matches)
+    if not deepest_match:
+        return 0
     deepest_round = round_abbrev(deepest_match.round)
     if not deepest_round:
         return 0
@@ -300,7 +308,9 @@ def _compute_earned(
         ]
         if not prior_completed:
             return 0
-        prior = max(prior_completed, key=lambda m: round_depth(m.round))
+        prior = select_deepest_match(prior_completed)
+        if not prior:
+            return 0
         prior_round = round_abbrev(prior.round)
         prior_won = prior.winner_id == player_id
         if not prior_won:
@@ -326,7 +336,10 @@ def _compute_defended(
     """Points the player earned at the same tournament last year."""
     if not matches:
         return 0
-    deepest = max(matches, key=lambda m: round_depth(m.round))
+    # Same qualifying-final guard as _compute_locked_in above.
+    deepest = select_deepest_match(matches)
+    if not deepest:
+        return 0
     deepest_round = round_abbrev(deepest.round)
     won_deepest = deepest.winner_id == player_id
     result = compute_player_result(deepest_round, won_deepest)

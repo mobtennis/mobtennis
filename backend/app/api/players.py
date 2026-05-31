@@ -21,7 +21,7 @@ from app.schemas.player_snapshot import (
     SurfaceRecord,
 )
 from app.services.player_enrich import enrich_one
-from app.services.rounds import compute_player_result, round_depth
+from app.services.rounds import compute_player_result, round_depth, select_deepest_match
 
 router = APIRouter(prefix="/api/players", tags=["players"])
 
@@ -433,7 +433,13 @@ def player_tournament_history(
     entries: list[TournamentHistoryEntry] = []
     for _, group in by_tournament.items():
         t = group[0][1]
-        deepest_match = max(group, key=lambda mt: round_depth(mt[0].round))[0]
+        # select_deepest_match guards against the qualifying-bracket
+        # "Final" mislabel — picking the verbose Q-final would have
+        # falsely shown qualifiers like Andrea Pellegrino with "W"
+        # results at Slams they only qualified for.
+        deepest_match = select_deepest_match([mt[0] for mt in group])
+        if not deepest_match:
+            continue
         won_deepest = deepest_match.winner_id == p.id
         result = compute_player_result(deepest_match.round, won_deepest)
         entries.append(

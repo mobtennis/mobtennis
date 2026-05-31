@@ -57,6 +57,51 @@ def round_abbrev(round_str: str | None) -> str:
     return _ROUND_ABBREV.get(tail.lower(), tail)
 
 
+def select_deepest_match(matches):
+    """Pick the match representing the deepest round a player reached,
+    avoiding the qualifying-bracket conflation that plagues api-tennis
+    verbose round labels.
+
+    The bug pattern: api-tennis labels every qualifying-bracket round
+    verbosely as "ATP <Tournament> - Quarter-finals" / "- Semi-finals" /
+    "- Final" even though qualifying is only 3 rounds. After
+    `_strip_prefix` those become "Quarter-finals" / "Semi-finals" /
+    "Final" with the same round_depth as their main-draw equivalents.
+    Naïve max-by-depth over a qualifier's matches at a Slam would
+    return their Q-final win (depth 100) and report them as the
+    tournament winner.
+
+    Two-tier strategy:
+      1. If the player has ANY short-code matches at this tournament
+         (R128, R64, …, QF, SF, F — Sackmann / Wikipedia convention),
+         restrict to those. Main-draw participation always produces a
+         short-code record, so this captures the true deepest reach
+         and ignores the parallel verbose Q-bracket records.
+      2. Otherwise — typical of Challenger / ITF tournaments where
+         api-tennis is our only data source and there are no
+         qualifying records to conflate — fall back to the max-depth
+         over the verbose-only set.
+
+    Returns the chosen Match-like object or None if `matches` is empty.
+    """
+    if not matches:
+        return None
+    short = [
+        m for m in matches
+        if getattr(m, "round", None) and " - " not in m.round
+    ]
+    if short:
+        # Among short codes, prefer "F" outright (main-draw final), else
+        # the deepest by depth weight.
+        for m in short:
+            if m.round == "F":
+                return m
+        return max(short, key=lambda m: round_depth(m.round))
+    # All-verbose set — no main-draw / qualifying ambiguity to worry
+    # about because we don't have a parallel main-draw record.
+    return max(matches, key=lambda m: round_depth(getattr(m, "round", None)))
+
+
 def compute_player_result(deepest_round: str | None, won_deepest: bool) -> str:
     """Map (deepest round reached, did they win that match?) → result code.
 
