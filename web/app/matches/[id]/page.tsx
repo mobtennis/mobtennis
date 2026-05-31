@@ -14,7 +14,22 @@ import { formatScore, formatSetScore, formatTime } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return { title: `Match ${id}` };
+  // Same revalidate as the page body fetch below so Next.js dedupes the
+  // two into a single backend call within a request.
+  const match = await api<MatchDetail>(`/api/matches/${id}`, { revalidate: 10 }).catch(
+    () => null,
+  );
+  if (!match) return { title: `Match ${id}` };
+
+  const p1 = match.player1?.full_name;
+  const p2 = match.player2?.full_name;
+  const event = match.tournament_name
+    ? `${match.tournament_name}${match.tournament_year ? ` ${match.tournament_year}` : ""}`
+    : null;
+  if (p1 && p2) {
+    return { title: event ? `${p1} vs ${p2} — ${event}` : `${p1} vs ${p2}` };
+  }
+  return { title: event ?? `Match ${id}` };
 }
 
 export default async function MatchPage({ params }: { params: Promise<{ id: string }> }) {
