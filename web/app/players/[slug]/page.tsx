@@ -18,6 +18,7 @@ import { ExternalLinks } from "@/components/ExternalLinks";
 import { FeedList } from "@/components/FeedList";
 import { GetTheAppCard } from "@/components/GetTheAppCard";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { PlayerPhotoStrip } from "@/components/PlayerPhotoStrip";
 import { PlayerSnapshot as PlayerSnapshotProse } from "@/components/PlayerSnapshot";
 import { SocialCard } from "@/components/SocialCard";
 import { TournamentHistoryList } from "@/components/TournamentHistoryList";
@@ -318,47 +319,3 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 
-function PlayerPhotoStrip({
-  images,
-  fullName,
-}: {
-  images: PlayerImageRef[];
-  fullName: string;
-}) {
-  // Strip primary + hidden; show only alternates. A "More photos"
-  // section that just re-shows the avatar is silly.
-  const alts = images.filter((i) => !i.is_primary && !i.is_hidden);
-  if (alts.length < 3) return null;
-  // Cap to 6 — keeps the strip from dominating mid-page on prolific
-  // players (Margaret Court has 30+; nobody scrolls through that
-  // here, the admin tool is for the full set).
-  const shown = alts.slice(0, 6);
-  return (
-    <section>
-      <SectionHeader
-        title="More photos"
-        subtitle="From Wikimedia Commons"
-      />
-      <div className="mt-2 grid grid-cols-3 gap-2 md:grid-cols-6">
-        {shown.map((img) => (
-          <a
-            key={img.id}
-            href={img.source_url ?? img.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group relative aspect-[3/4] overflow-hidden rounded-md border border-ink-700 bg-ink-900"
-            title={img.credit ?? undefined}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={img.url}
-              alt={fullName}
-              className="h-full w-full object-cover transition-opacity group-hover:opacity-90"
-              loading="lazy"
-            />
-          </a>
-        ))}
-      </div>
-    </section>
-  );
-}
