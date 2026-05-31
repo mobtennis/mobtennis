@@ -584,9 +584,17 @@ CAMPAIGN BRIEFS:
 - Ad copy goal: drive a click. Honest, factual, no clickbait, no superlatives the data doesn't support. Mention mob.tennis or the value (free, no sign-up, live scores) in at least one headline.
 
 NEWS SOURCES:
-- The recap is editorial paraphrase, not original reporting. When a sentence's facts came primarily from one of the supplied News headlines (an injury, a withdrawal, a press conference, an off-court development), record the source in the `news_sources` tool field so readers can read the original article.
-- Only include sources you actually drew from. If the recap leans on 3 headlines, list 3. If the week was all match results and you didn't lean on any news, return an empty list.
-- Each source is `{title, url, source}` — copy these verbatim from the News block. Do NOT invent URLs or rewrite titles.
+- The recap is editorial paraphrase, not original reporting. Every off-court claim — anything the match table cannot tell — MUST be attributed in `news_sources`.
+- What counts as "from news" (not from match results) and therefore needs citation:
+    * player quotes, interviews, press-conference content
+    * dedications, family stories, personal milestones beyond the score
+    * locker-room atmosphere, off-court drama, controversies, complaints
+    * scheduling decisions, format changes, organisational news
+    * ranking analyses, narrative framing about a draw being "wide open" or "in turmoil"
+    * Russia/Ukraine commentary or any political statement by a player
+- For each off-court claim in the body, find the supporting News headline and add it to `news_sources`. If you mention 5 off-court items, expect ~5 entries.
+- Empty list is correct ONLY when literally every sentence in the body is a pure match-result fact (champion, score, opponent, round). That is rare during Slams — most weeks will have several citations.
+- Each source is `{title, url, source}` — copy these verbatim from the News block. Do NOT invent URLs, paraphrase titles, or merge multiple headlines into one entry.
 
 EDITORIAL NOTES:
 - If the user prompt contains an `EDITORIAL NOTES` section, treat those facts as verified human-supplied context. Weave them naturally into the recap when the prose mentions the related player, tournament, or event. Notes are not inventions: they are additional truths to include.
@@ -735,11 +743,16 @@ _TOOL_SPEC = {
             "news_sources": {
                 "type": "array",
                 "description": (
-                    "Source-article citations. List ONLY the News headlines "
-                    "whose facts you actually leaned on in writing the body. "
+                    "Source-article citations. MANDATORY for any off-court "
+                    "claim in the body (quotes, dedications, controversies, "
+                    "ranking analyses, atmosphere, scheduling decisions, "
+                    "political statements). Match-result facts (champion, "
+                    "score, round, seed) do NOT need citations; everything "
+                    "else does. Most Slam weeks will have 3-8 entries. "
                     "Copy `title`, `url`, and `source` verbatim from the "
-                    "News block of the user prompt. Empty list is fine when "
-                    "the recap is driven by match results alone."
+                    "News block of the user prompt — do not paraphrase. "
+                    "Empty list is correct only when the body is pure "
+                    "match results with zero narrative or off-court content."
                 ),
                 "items": {
                     "type": "object",
