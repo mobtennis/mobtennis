@@ -29,10 +29,10 @@ export async function DigestHomeCard() {
     <section className="rounded-lg border border-ink-700 bg-ink-900 p-4 shadow-card">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-[10px] font-bold uppercase tracking-wider text-accent">
-          This week in tennis
+          {coverageEyebrow(digest)}
         </h2>
         <span className="text-[10px] uppercase tracking-wider text-text-muted">
-          {formatWeekLabel(digest.week_start)}
+          {coverageLabel(digest)}
         </span>
       </div>
       <Link href="/digest" className="mt-2 block hover:opacity-80">
@@ -50,11 +50,39 @@ export async function DigestHomeCard() {
   );
 }
 
-function formatWeekLabel(weekStart: string): string {
-  const start = new Date(`${weekStart}T00:00:00Z`);
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 6);
-  const fmt = (d: Date) =>
-    d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-  return `${fmt(start)} – ${fmt(end)}`;
+// Coverage label helpers — accurate to the digest's actual period.
+// Earlier this card added 6 days to week_start to produce a fake
+// "May 30 – Jun 5" range even for 20-hour daily digests. See the
+// same pair of helpers in app/digest/[week]/page.tsx for the full
+// rationale; mirrored here so the home card matches.
+
+function _dayStart(d: Date): number {
+  return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 86_400_000);
+}
+
+function _fmtDay(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function coverageEyebrow(d: { period_start: string | null; period_end: string | null }): string {
+  if (!d.period_start || !d.period_end) return "This week in tennis";
+  const hours =
+    (new Date(d.period_end).getTime() - new Date(d.period_start).getTime()) / 3_600_000;
+  if (hours <= 30) return "Tennis recap";
+  if (hours <= 96) return "The last few days in tennis";
+  return "This week in tennis";
+}
+
+function coverageLabel(d: {
+  period_start: string | null;
+  period_end: string | null;
+  week_start: string;
+}): string {
+  if (!d.period_start || !d.period_end) {
+    return _fmtDay(new Date(`${d.week_start}T00:00:00Z`));
+  }
+  const s = new Date(d.period_start);
+  const e = new Date(d.period_end);
+  if (_dayStart(s) === _dayStart(e)) return _fmtDay(e);
+  return `${_fmtDay(s)} – ${_fmtDay(e)}`;
 }

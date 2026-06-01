@@ -78,4 +78,6 @@ def _to_detail(row: EditorialDigest) -> DigestDetail:
         body_md=row.body_md,
         model_name=row.model_name,
         news_sources=sources,
+        period_start=row.period_start,
+        period_end=row.period_end,
     )

@@ -68,10 +68,10 @@ export default async function DigestWeekPage({
 
       <header className="rounded-lg border border-ink-700 bg-ink-900 p-5 shadow-card">
         <div className="text-[10px] font-bold uppercase tracking-wider text-accent">
-          This week in tennis
+          {coverageEyebrow(digest)}
         </div>
         <div className="mt-1 text-xs uppercase tracking-wider text-text-muted">
-          {formatWeekLabel(digest.week_start)}
+          {coverageLabel(digest)}
         </div>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-text-primary">
           {digest.headline}
@@ -138,7 +138,7 @@ export default async function DigestWeekPage({
                   }`}
                 >
                   <span className="w-32 shrink-0 whitespace-nowrap text-[11px] uppercase tracking-wider text-text-muted">
-                    {formatWeekLabel(d.week_start)}
+                    {archiveLabel(d.week_start)}
                   </span>
                   <span className="line-clamp-1 flex-1 font-medium text-text-primary">
                     {d.headline}
@@ -153,11 +153,66 @@ export default async function DigestWeekPage({
   );
 }
 
-function formatWeekLabel(weekStart: string): string {
-  const start = new Date(`${weekStart}T00:00:00Z`);
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 6);
-  const fmt = (d: Date) =>
-    d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-  return `${fmt(start)} – ${fmt(end)}`;
+// Day-precision (UTC) so we can ask "did this digest cover one
+// calendar day or more?" without timezone surprises.
+function _dayStart(d: Date): number {
+  return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 86_400_000);
+}
+
+function _fmtDay(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+/**
+ * Eyebrow text — adapts to the digest's actual coverage window.
+ * Earlier this was hard-coded "This week in tennis", which read as
+ * a falsehood for the daily-during-Slams digests that only span
+ * ~20 hours.
+ *
+ * Bucketed by elapsed hours, not by calendar-day diff, so a digest
+ * covering "yesterday evening → this morning" reads as a single
+ * recap (~20h) rather than "the last few days" (which the day-diff
+ * would say because midnight passed).
+ *
+ *   ≤ 30 h  → "Tennis recap"           (single daily run)
+ *   ≤ 96 h  → "The last few days in tennis"
+ *   > 96 h  → "This week in tennis"    (Monday cron / catch-up)
+ *   unknown → "This week in tennis"    (legacy backfilled rows)
+ */
+function coverageEyebrow(d: { period_start: string | null; period_end: string | null }): string {
+  if (!d.period_start || !d.period_end) return "This week in tennis";
+  const hours =
+    (new Date(d.period_end).getTime() - new Date(d.period_start).getTime()) / 3_600_000;
+  if (hours <= 30) return "Tennis recap";
+  if (hours <= 96) return "The last few days in tennis";
+  return "This week in tennis";
+}
+
+/**
+ * Subtitle range. Single-day windows show one date; multi-day windows
+ * show a range; legacy rows without explicit periods fall back to
+ * the anchor date alone (no fake week-ahead extrapolation).
+ */
+function coverageLabel(d: {
+  period_start: string | null;
+  period_end: string | null;
+  week_start: string;
+}): string {
+  if (!d.period_start || !d.period_end) {
+    return _fmtDay(new Date(`${d.week_start}T00:00:00Z`));
+  }
+  const s = new Date(d.period_start);
+  const e = new Date(d.period_end);
+  if (_dayStart(s) === _dayStart(e)) return _fmtDay(e);
+  return `${_fmtDay(s)} – ${_fmtDay(e)}`;
+}
+
+/**
+ * Archive-row label. The list endpoint only returns `week_start`
+ * (no period fields), so we just show the anchor date — accurate
+ * for daily digests, and for older weekly rows it's the start of
+ * the covered week which is the best signal we have here.
+ */
+function archiveLabel(weekStart: string): string {
+  return _fmtDay(new Date(`${weekStart}T00:00:00Z`));
 }

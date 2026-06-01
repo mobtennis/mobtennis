@@ -27,6 +27,11 @@ class DigestDetail(DigestSummary):
     body_md: str
     model_name: str
     news_sources: list[NewsSource] = []
+    # Coverage window the digest actually summarised. Nullable for
+    # backfilled legacy rows that pre-date the period tracking —
+    # those covered the ISO week starting at `week_start`.
+    period_start: datetime | None = None
+    period_end: datetime | None = None
 
 
 class CampaignBrief(BaseModel):

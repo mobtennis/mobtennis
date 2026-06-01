@@ -412,6 +412,10 @@ export type DigestDetail = DigestSummary & {
   body_md: string;
   model_name: string;
   news_sources: NewsSource[];
+  /** Coverage window the digest summarises. Nullable on legacy
+   *  backfilled rows that predate period tracking. */
+  period_start: string | null;
+  period_end: string | null;
 };
 
 export type CampaignBrief = {
