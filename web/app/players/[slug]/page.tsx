@@ -26,7 +26,7 @@ import { TournamentGroups } from "@/components/TournamentGroup";
 import { SectionHeader } from "@/components/SectionHeader";
 import { TrackOnMount } from "@/components/TrackOnMount";
 import { EVENTS } from "@/lib/analytics";
-import { flagEmoji } from "@/lib/format";
+import { commonsImgVariant, flagEmoji } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -204,17 +204,21 @@ function PlayerHero({ player }: { player: PlayerDetail }) {
               photos crop to chest/torso under bg-center, which got
               awkward fast. Top-anchoring keeps the face in the
               visible band. Proper fix below picks a landscape hero
-              when one exists. */}
+              when one exists. Commons thumb at 1280 — wide enough
+              for desktop 1024+ viewports, slim enough to not waste
+              ~5MB of full-res for a 176px-tall band. */}
           <div
             className="h-44 bg-cover bg-top"
-            style={{ backgroundImage: `url(${player.hero_image_url ?? player.image_url})` }}
+            style={{
+              backgroundImage: `url(${commonsImgVariant(player.hero_image_url ?? player.image_url, 1280)})`,
+            }}
             aria-hidden
           />
           <div className="absolute inset-0 bg-gradient-to-t from-ink-900 via-ink-900/60 to-transparent" />
           <div className="relative -mt-12 flex items-end gap-4 p-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={player.image_url ?? ""}
+              src={commonsImgVariant(player.image_url, 192) ?? player.image_url ?? ""}
               alt={player.full_name}
               className="h-20 w-20 shrink-0 rounded-full border-2 border-ink-900 object-cover shadow-lg"
             />

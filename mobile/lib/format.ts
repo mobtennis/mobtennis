@@ -143,6 +143,36 @@ export function formatRelative(iso: string): string {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+// Wikimedia's thumb endpoint only serves these canonical widths
+// (anti-DoS allowlist as of 2024). Asking for anything else returns
+// a 400. Snap to the smallest allowed width ≥ requested.
+const _COMMONS_ALLOWED_WIDTHS = [120, 250, 500, 960, 1280, 1920, 2560] as const;
+
+function _snapWidth(requested: number): number {
+  for (const w of _COMMONS_ALLOWED_WIDTHS) {
+    if (w >= requested) return w;
+  }
+  return _COMMONS_ALLOWED_WIDTHS[_COMMONS_ALLOWED_WIDTHS.length - 1];
+}
+
+/**
+ * Rewrite a Wikimedia Commons upload URL to a pre-rendered thumbnail.
+ * See web/lib/format.ts for the full rationale. Non-Commons URLs
+ * (api-tennis, manual) pass through unchanged.
+ */
+export function commonsImgVariant(
+  url: string | null | undefined,
+  width: number,
+): string | null {
+  if (!url) return null;
+  const m = url.match(/^(https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\/)(?!thumb\/)([0-9a-f]\/[0-9a-f]{2}\/)([^/?#]+)/);
+  if (!m) return url;
+  const [, base, hashPath, filename] = m;
+  if (/\.(svg|gif)$/i.test(filename)) return url;
+  const w = _snapWidth(width);
+  return `${base}thumb/${hashPath}${filename}/${w}px-${filename}`;
+}
+
 export function flagEmoji(iso3: string | null): string {
   if (!iso3) return "";
   // ATP/WTA neutral-flag policy: Russian and Belarusian players

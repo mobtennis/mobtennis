@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 
 import { API_BASE, type PlayerImage } from "@/lib/api";
+import { commonsImgVariant } from "@/lib/format";
 
 /**
  * One image card in the admin grid. Renders the photo plus
@@ -52,7 +53,7 @@ export function ImageRow({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={image.url}
+        src={commonsImgVariant(image.url, 480) ?? image.url}
         alt=""
         className="aspect-[3/4] w-full object-cover"
         loading="lazy"

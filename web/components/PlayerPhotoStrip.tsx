@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { PlayerImage } from "@/lib/api";
 import { SectionHeader } from "@/components/SectionHeader";
+import { commonsImgVariant } from "@/lib/format";
 
 /**
  * "More photos" strip on the player profile page. Clicking a
@@ -76,7 +77,7 @@ function PhotoThumb({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={image.url}
+          src={commonsImgVariant(image.url, 320) ?? image.url}
           alt={fullName}
           className="h-full w-full object-cover transition-opacity group-hover:opacity-90"
           loading="lazy"
@@ -150,7 +151,7 @@ function PhotoLightbox({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={current.url}
+          src={commonsImgVariant(current.url, 1600) ?? current.url}
           alt={fullName}
           className="max-h-[80vh] max-w-full rounded-md object-contain"
         />

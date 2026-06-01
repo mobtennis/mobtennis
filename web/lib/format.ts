@@ -161,6 +161,57 @@ export function formatRelative(iso: string): string {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+// Wikimedia's thumbnail server only serves widths from this canonical
+// allowlist (anti-DoS, ~2024). Asking for anything else (e.g. 96px or
+// 480px) returns a 400 "Use thumbnail sizes listed on …" error.
+// We snap to the smallest allowed width that's ≥ requested so the
+// returned image is always at least as sharp as the caller asked for.
+const _COMMONS_ALLOWED_WIDTHS = [120, 250, 500, 960, 1280, 1920, 2560] as const;
+
+function _snapWidth(requested: number): number {
+  for (const w of _COMMONS_ALLOWED_WIDTHS) {
+    if (w >= requested) return w;
+  }
+  return _COMMONS_ALLOWED_WIDTHS[_COMMONS_ALLOWED_WIDTHS.length - 1];
+}
+
+/**
+ * Rewrite a Wikimedia upload URL to a pre-rendered thumbnail.
+ *
+ * Why: Wikipedia infobox photos average 800-3000px and some go to
+ * 8000+. Loading those into a 40px avatar circle wastes 2-5MB per
+ * request on data and slows LCP for no visual benefit. Commons
+ * already serves thumbnails at predictable URLs — no server-side
+ * resize pipeline needed.
+ *
+ * Pattern:
+ *   commons/6/64/Foo.jpg
+ *   →
+ *   commons/thumb/6/64/Foo.jpg/{width}px-Foo.jpg
+ *
+ * Width is the **target render width in device pixels** (CSS px ×
+ * device pixel ratio). The function snaps to the nearest
+ * Wikimedia-allowed width above the requested size, so a 96-pixel
+ * avatar gets the 120-pixel variant (smallest allowed).
+ *
+ * Non-Wikimedia URLs (api-tennis CDN, manual uploads, YouTube)
+ * pass through unchanged.
+ */
+export function commonsImgVariant(
+  url: string | null | undefined,
+  width: number,
+): string | null {
+  if (!url) return null;
+  const m = url.match(/^(https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\/)(?!thumb\/)([0-9a-f]\/[0-9a-f]{2}\/)([^/?#]+)/);
+  if (!m) return url;
+  const [, base, hashPath, filename] = m;
+  // Commons thumb server can't handle SVGs / GIFs through this path —
+  // serve the original for those.
+  if (/\.(svg|gif)$/i.test(filename)) return url;
+  const w = _snapWidth(width);
+  return `${base}thumb/${hashPath}${filename}/${w}px-${filename}`;
+}
+
 export function flagEmoji(iso3: string | null): string {
   if (!iso3) return "";
   // ATP/WTA neutral-flag policy: Russian and Belarusian players
