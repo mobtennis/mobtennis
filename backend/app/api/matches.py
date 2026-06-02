@@ -123,8 +123,11 @@ def today_matches(
 ):
     today_start = datetime.combine(datetime.utcnow().date(), time.min)
     today_end = datetime.combine(datetime.utcnow().date(), time.max)
+    # Join Tournament so exclude_junior_rounds can apply the
+    # "null round at a Slam = junior doubles" guard.
     stmt = (
         select(Match)
+        .join(Tournament, Tournament.id == Match.tournament_id)
         .where(Match.scheduled_at >= today_start, Match.scheduled_at <= today_end)
         .order_by(Match.scheduled_at)
         .limit(limit)

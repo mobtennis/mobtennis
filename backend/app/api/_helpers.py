@@ -67,20 +67,44 @@ def match_to_summary(session: Session, m: Match) -> MatchSummary:
 
 
 def exclude_junior_rounds(stmt):
-    """Skip Boys'/Girls' brackets at Slams (junior tour).
+    """Skip junior-bracket matches at Slams.
 
     At Slams the junior brackets share the same Tournament row as the
-    main draw but use verbose round labels prefixed "Boys " / "Girls "
-    (e.g. "Boys French Open - Semi-finals"), whereas main-draw rounds
-    use short codes like "F", "SF", "QF". Filter on the prefix and
-    keep NULL rounds (lower-tier ITF/Challenger matches in our DB
-    often have null round labels).
+    main draw, but their match labels come through in two shapes:
+
+      1. Verbose with the gender prefix: "Boys French Open -
+         Semi-finals", "Girls French Open - 1/32-finals", etc. Easy
+         to filter by `startswith("Boys ")` / `startswith("Girls ")`.
+
+      2. NULL round label for junior DOUBLES. Main-draw Slam doubles
+         always lands with an "ATP French Open - 1/8-finals" or
+         "French Open - Quarter-finals" (mixed) round label, so a
+         null round at a Slam means we couldn't classify the match —
+         in practice always a junior doubles bracket.
+
+    Joins on Tournament.category to scope the null-round filter to
+    grand_slam tournaments only — ITF/Challenger matches legitimately
+    have null rounds (early-round labels are often missing from
+    api-tennis) and we want those on the live page.
+
+    The caller must already have the Tournament join in place; both
+    /live and /upcoming-featured join Tournament for tier_priority.
+    /today does not — its stmt builder calls join_tournament_if_needed
+    via the second argument flag.
     """
+    from app.models.tournament import Tournament, TournamentCategory
     return stmt.where(
+        # Prefix exclusion (verbose junior singles + doubles labels).
         Match.round.is_(None)
         | ~or_(
             Match.round.startswith("Boys "),
             Match.round.startswith("Girls "),
+        )
+    ).where(
+        # Null-round-at-Slam exclusion: drop, everywhere else keep.
+        ~(
+            (Tournament.category == TournamentCategory.GRAND_SLAM)
+            & Match.round.is_(None)
         )
     )
 
