@@ -30,10 +30,15 @@ from app.db.session import get_session
 from app.models.digest import EditorialDigest
 from app.models.player import Player
 from app.models.player_image import PlayerImage
-from app.models.spot_the_ball import SpotTheBallPuzzle
+from app.models.spot_the_ball import SpotTheBallPuzzle, SpotTheBallSkip
 from app.schemas.digest import CampaignBrief, CampaignBriefsResponse
 from app.schemas.player import PlayerImageView
-from app.schemas.spot_the_ball import SpotTheBallPuzzleView
+from app.schemas.spot_the_ball import (
+    CandidateStats,
+    CandidateView,
+    ScheduleResponse,
+    SpotTheBallPuzzleView,
+)
 from app.services.editorial_digest import generate_digest
 from app.services.players_image_enrich import _sync_primary_pointer
 
@@ -327,4 +332,271 @@ def calibrate_ball(
         credit=row.credit,
         license_url=row.license_url,
         source_url=row.source_url,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Spot-the-Ball admin builder — content pipeline
+# ---------------------------------------------------------------------------
+
+
+def _next_scheduled_date(session: Session) -> date:
+    """The day after the latest existing puzzle, or today if none exist
+    yet. Admin builds a queue of future puzzles by scheduling
+    consecutively; cron promotion happens automatically as dates land."""
+    from datetime import timedelta
+    last = session.exec(
+        select(SpotTheBallPuzzle.puzzle_date)
+        .order_by(SpotTheBallPuzzle.puzzle_date.desc())
+        .limit(1)
+    ).first()
+    today = date.today()
+    if not last:
+        return today
+    return max(last + timedelta(days=1), today + timedelta(days=1))
+
+
+def _commons_file_page_url(upload_url: str) -> str | None:
+    """Derive the Commons File: page URL from an upload.wikimedia.org
+    URL so the puzzle's source_url links back to the original page
+    with full provenance + licence details."""
+    # https://upload.wikimedia.org/wikipedia/commons/[thumb/]X/YZ/Filename.ext[/...]
+    import re
+    from urllib.parse import quote
+    m = re.match(
+        r"https://upload\.wikimedia\.org/wikipedia/commons/(?:thumb/)?[0-9a-f]/[0-9a-f]{2}/([^/?#]+)",
+        upload_url,
+    )
+    if not m:
+        return None
+    filename = m.group(1)
+    return f"https://commons.wikimedia.org/wiki/File:{quote(filename)}"
+
+
+def _player_query_candidate(
+    session: Session, exclude_image_ids: set[int],
+) -> tuple[PlayerImage, Player] | None:
+    """Find the next PlayerImage to offer the admin. Criteria:
+
+      * Player has a ranking signal (current_rank known OR career_high
+        ≤ 300) — filters out the long tail of obscure rows from
+        our lazy enrichment.
+      * Image is hero-eligible (landscape, ≥1000px wide) — action
+        shots, not portraits. Tennis players holding a racket.
+      * Image isn't already used in a puzzle AND hasn't been skipped.
+      * Image isn't hidden.
+
+    Ordered by image id (stable, predictable progression through
+    the queue) rather than randomly so re-opens land on the same
+    photo as before any skip/schedule action.
+    """
+    stmt = (
+        select(PlayerImage, Player)
+        .join(Player, Player.id == PlayerImage.player_id)
+        .where(
+            PlayerImage.is_hero_eligible == True,  # noqa: E712
+            PlayerImage.is_hidden == False,        # noqa: E712
+            (Player.current_rank.is_not(None)) | (Player.career_high_rank <= 300),
+        )
+        .order_by(PlayerImage.id.asc())
+    )
+    if exclude_image_ids:
+        stmt = stmt.where(PlayerImage.id.notin_(exclude_image_ids))
+    return session.exec(stmt).first()
+
+
+def _excluded_image_ids(session: Session) -> set[int]:
+    used = {
+        r for (r,) in session.exec(
+            select(SpotTheBallPuzzle.player_image_id)
+            .where(SpotTheBallPuzzle.player_image_id.is_not(None))
+        ).all()
+        if r is not None
+    }
+    skipped = {
+        r for (r,) in session.exec(select(SpotTheBallSkip.player_image_id)).all()
+    }
+    return used | skipped
+
+
+def _candidate_view(img: PlayerImage, player: Player) -> CandidateView:
+    name = player.full_name or ""
+    return CandidateView(
+        player_image_id=img.id,
+        image_url=img.url,
+        player_slug=player.slug,
+        player_name=name,
+        suggested_caption=name,
+        credit=img.credit,
+        license_url=img.license_url,
+        source_url=_commons_file_page_url(img.url),
+        width=img.width,
+        height=img.height,
+    )
+
+
+def _candidate_stats(session: Session) -> CandidateStats:
+    excluded = _excluded_image_ids(session)
+    total_eligible = session.exec(
+        select(PlayerImage.id)
+        .join(Player, Player.id == PlayerImage.player_id)
+        .where(
+            PlayerImage.is_hero_eligible == True,  # noqa: E712
+            PlayerImage.is_hidden == False,        # noqa: E712
+            (Player.current_rank.is_not(None)) | (Player.career_high_rank <= 300),
+        )
+    ).all()
+    remaining = len([i for i in total_eligible if i not in excluded])
+    queued = len(session.exec(
+        select(SpotTheBallPuzzle.id)
+        .where(SpotTheBallPuzzle.is_published == False)  # noqa: E712
+        .where(SpotTheBallPuzzle.ball_x_pct.is_not(None))
+    ).all())
+    published = len(session.exec(
+        select(SpotTheBallPuzzle.id)
+        .where(SpotTheBallPuzzle.is_published == True)  # noqa: E712
+    ).all())
+    skipped = len(session.exec(select(SpotTheBallSkip.id).distinct()).all())
+    return CandidateStats(
+        candidates_remaining=remaining,
+        queued=queued,
+        published=published,
+        skipped=skipped,
+    )
+
+
+def _fetch_next_candidate(session: Session) -> CandidateView | None:
+    found = _player_query_candidate(session, _excluded_image_ids(session))
+    if not found:
+        return None
+    img, player = found
+    return _candidate_view(img, player)
+
+
+@router.get(
+    "/spot-the-ball/builder/next",
+    dependencies=[Depends(_require_admin_key)],
+)
+def builder_next_candidate(session: Session = Depends(get_session)):
+    """Returns the next candidate + a stats snapshot. Used on initial
+    page load and re-fetched after each skip/schedule action."""
+    return {
+        "candidate": _fetch_next_candidate(session),
+        "stats": _candidate_stats(session),
+    }
+
+
+class SkipBody(BaseModel):
+    player_image_id: int
+
+
+@router.post(
+    "/spot-the-ball/builder/skip",
+    dependencies=[Depends(_require_admin_key)],
+)
+def builder_skip(body: SkipBody, session: Session = Depends(get_session)):
+    """Drop this image from the candidate pool permanently."""
+    existing = session.exec(
+        select(SpotTheBallSkip).where(
+            SpotTheBallSkip.player_image_id == body.player_image_id,
+        )
+    ).first()
+    if not existing:
+        session.add(SpotTheBallSkip(player_image_id=body.player_image_id))
+        session.commit()
+    return {
+        "candidate": _fetch_next_candidate(session),
+        "stats": _candidate_stats(session),
+    }
+
+
+@router.get(
+    "/spot-the-ball/queue",
+    response_model=list[SpotTheBallPuzzleView],
+    dependencies=[Depends(_require_admin_key)],
+)
+def builder_queue(session: Session = Depends(get_session)):
+    """Scheduled-but-not-yet-processed puzzles. The local Replicate
+    processor reads this to know which rows need inpainting."""
+    rows = session.exec(
+        select(SpotTheBallPuzzle)
+        .where(SpotTheBallPuzzle.is_published == False)  # noqa: E712
+        .where(SpotTheBallPuzzle.ball_x_pct.is_not(None))
+        .order_by(SpotTheBallPuzzle.puzzle_date.asc())
+    ).all()
+    return [
+        SpotTheBallPuzzleView(
+            puzzle_date=r.puzzle_date,
+            image_url=r.image_url,
+            original_image_url=r.original_image_url,
+            image_w=r.image_w,
+            image_h=r.image_h,
+            ball_x_pct=r.ball_x_pct or 50.0,
+            ball_y_pct=r.ball_y_pct or 50.0,
+            caption=r.caption,
+            credit=r.credit,
+            license_url=r.license_url,
+            source_url=r.source_url,
+        )
+        for r in rows
+    ]
+
+
+class ScheduleBody(BaseModel):
+    player_image_id: int
+    ball_x_pct: float
+    ball_y_pct: float
+    caption: str | None = None  # admin override; default = suggested
+
+
+@router.post(
+    "/spot-the-ball/builder/schedule",
+    response_model=ScheduleResponse,
+    dependencies=[Depends(_require_admin_key)],
+)
+def builder_schedule(
+    body: ScheduleBody,
+    session: Session = Depends(get_session),
+):
+    """Schedule this image as a future puzzle. The row enters the
+    queue with is_published=False — invisible to the public until the
+    local Replicate processor runs and flips it.
+    """
+    img = session.exec(
+        select(PlayerImage).where(PlayerImage.id == body.player_image_id)
+    ).first()
+    if not img:
+        raise HTTPException(404, "Player image not found")
+    player = session.exec(
+        select(Player).where(Player.id == img.player_id)
+    ).first()
+    if not player:
+        raise HTTPException(404, "Player not found")
+
+    scheduled_date = _next_scheduled_date(session)
+    caption = body.caption or player.full_name or "Spot the ball"
+
+    row = SpotTheBallPuzzle(
+        puzzle_date=scheduled_date,
+        # Until the processor runs, image_url is the Wikimedia source
+        # (public won't see this because is_published gates access).
+        image_url=img.url,
+        original_image_url=img.url,
+        image_w=img.width,
+        image_h=img.height,
+        ball_x_pct=max(0.0, min(100.0, body.ball_x_pct)),
+        ball_y_pct=max(0.0, min(100.0, body.ball_y_pct)),
+        caption=caption,
+        credit=img.credit,
+        license_url=img.license_url,
+        source_url=_commons_file_page_url(img.url),
+        player_image_id=img.id,
+        is_published=False,
+    )
+    session.add(row)
+    session.commit()
+    return ScheduleResponse(
+        scheduled_date=scheduled_date,
+        next_candidate=_fetch_next_candidate(session),
+        stats=_candidate_stats(session),
     )

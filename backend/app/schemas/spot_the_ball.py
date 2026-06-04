@@ -30,3 +30,36 @@ class SpotTheBallArchiveItem(BaseModel):
     puzzle_date: date
     caption: str
     image_url: str
+
+
+class CandidateView(BaseModel):
+    """One PlayerImage offered to the admin builder. Includes
+    everything the UI needs to render the photo + offer skip / use
+    + auto-derive a caption when the admin schedules."""
+    player_image_id: int
+    image_url: str
+    player_slug: str
+    player_name: str
+    suggested_caption: str
+    credit: str | None = None
+    license_url: str | None = None
+    source_url: str | None = None  # Commons file page
+    width: int | None = None
+    height: int | None = None
+
+
+class CandidateStats(BaseModel):
+    """Sidebar counts on the builder page so the admin knows the
+    state of the world."""
+    candidates_remaining: int
+    queued: int  # scheduled but not yet published (waiting on Replicate)
+    published: int
+    skipped: int
+
+
+class ScheduleResponse(BaseModel):
+    """What the admin sees after clicking the ball: which date the
+    new puzzle was assigned to, plus the next candidate."""
+    scheduled_date: date
+    next_candidate: CandidateView | None = None
+    stats: CandidateStats

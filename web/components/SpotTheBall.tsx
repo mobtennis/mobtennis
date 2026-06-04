@@ -265,23 +265,48 @@ function Pin({
   y_pct: number;
   variant: "perfect" | "close" | "miss" | "truth" | "calibrated";
 }) {
-  const color =
+  // Crosshair instead of a filled circle so the marker doesn't
+  // smother the actual ball on reveal. Four short lines extending
+  // from a tiny centre dot — visually obvious where the point IS
+  // without obscuring the pixels at the point.
+  const stroke =
     variant === "perfect"
-      ? "bg-emerald-400 ring-emerald-300"
+      ? "stroke-emerald-300"
       : variant === "close"
-        ? "bg-amber-400 ring-amber-300"
+        ? "stroke-amber-300"
         : variant === "miss"
-          ? "bg-red-400 ring-red-300"
+          ? "stroke-red-300"
           : variant === "truth"
-            ? "bg-accent ring-accent"
-            : "bg-emerald-400 ring-emerald-300";
-  const ring = variant === "truth" ? "ring-4" : "ring-2";
+            ? "stroke-accent"
+            : "stroke-emerald-300";
+  const dot =
+    variant === "perfect"
+      ? "fill-emerald-300"
+      : variant === "close"
+        ? "fill-amber-300"
+        : variant === "miss"
+          ? "fill-red-300"
+          : variant === "truth"
+            ? "fill-accent"
+            : "fill-emerald-300";
   return (
-    <span
-      className={`pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full ${color} ${ring} ring-offset-2 ring-offset-ink-900/60 shadow-lg`}
+    <svg
+      className="pointer-events-none absolute h-8 w-8 -translate-x-1/2 -translate-y-1/2 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
       style={{ left: `${x_pct}%`, top: `${y_pct}%` }}
+      viewBox="-20 -20 40 40"
       aria-hidden
-    />
+    >
+      {/* Outer ring softens the visibility on busy backgrounds. */}
+      <circle r="8" fill="none" className={stroke} strokeWidth="1.4" />
+      {/* Crosshair arms — gap in the middle preserves a clear view
+          of the underlying pixels. */}
+      <line x1="-15" y1="0" x2="-3" y2="0" className={stroke} strokeWidth="1.4" strokeLinecap="round" />
+      <line x1="3" y1="0" x2="15" y2="0" className={stroke} strokeWidth="1.4" strokeLinecap="round" />
+      <line x1="0" y1="-15" x2="0" y2="-3" className={stroke} strokeWidth="1.4" strokeLinecap="round" />
+      <line x1="0" y1="3" x2="0" y2="15" className={stroke} strokeWidth="1.4" strokeLinecap="round" />
+      {/* Tiny centre dot anchors the marker without covering the ball. */}
+      <circle r="1.2" className={dot} />
+    </svg>
   );
 }
 

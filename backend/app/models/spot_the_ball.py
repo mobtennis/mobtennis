@@ -67,5 +67,29 @@ class SpotTheBallPuzzle(SQLModel, table=True):
     # credit so curious players can see the source.
     source_url: str | None = None
 
+    # Link back to the PlayerImage this puzzle was built from when it
+    # came through the admin builder (vs. the v1 hand-seeded set,
+    # which has no PlayerImage origin and leaves this null).
+    player_image_id: int | None = Field(default=None, foreign_key="player_images.id", index=True)
+
+    # Gated by the local Replicate processor: rows enter the queue
+    # with is_published=False (image_url still points at the original
+    # Wikimedia URL — the ball is visible, public must not see it).
+    # Processor downloads, inpaints, writes to web/public, then sets
+    # is_published=True. Public endpoints filter on this flag.
+    is_published: bool = Field(default=False, index=True)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class SpotTheBallSkip(SQLModel, table=True):
+    """Admin skipped this image during the builder workflow — don't
+    show it as a candidate again. Independent of PlayerImage.is_hidden
+    (which has site-wide effects); skipping for Spot the Ball is a
+    purely-game-side decision and doesn't influence other surfaces."""
+    __tablename__ = "spot_the_ball_skips"
+
+    id: int | None = Field(default=None, primary_key=True)
+    player_image_id: int = Field(foreign_key="player_images.id", index=True, unique=True)
+    skipped_at: datetime = Field(default_factory=datetime.utcnow)

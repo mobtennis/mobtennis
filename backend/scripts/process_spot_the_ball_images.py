@@ -240,11 +240,21 @@ def _inpaint_ball(
     return Image.alpha_composite(base, overlay).convert("RGB")
 
 
-def _fetch_calibrated_puzzles() -> list[dict]:
+def _fetch_calibrated_puzzles(queue_only: bool = False) -> list[dict]:
+    """Pull puzzle payloads. By default returns everything in the
+    public archive (published, has been through processing once).
+
+    With queue_only=True, instead returns is_published=False rows
+    via the dedicated admin endpoint — these are the puzzles the
+    builder has scheduled and the processor needs to inpaint.
+    """
+    if queue_only:
+        url = f"{API_BASE}/api/admin/spot-the-ball/queue?key={ADMIN_KEY}"
+        with urllib.request.urlopen(url) as r:
+            return json.load(r)
     url = f"{API_BASE}/api/spot-the-ball/archive?limit=200"
     with urllib.request.urlopen(url) as r:
         archive = json.load(r)
-    # Archive items don't include ball coords — fetch each.
     out = []
     for item in archive:
         with urllib.request.urlopen(
@@ -252,6 +262,10 @@ def _fetch_calibrated_puzzles() -> list[dict]:
         ) as r:
             out.append(json.load(r))
     return out
+
+
+import os
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
 
 
 def _prod_update_image_url(
@@ -278,8 +292,9 @@ def _prod_update_image_url(
         "row = s.exec(select(SpotTheBallPuzzle).where(SpotTheBallPuzzle.puzzle_date == d)).first(); "
         "row.image_url = new; "
         "row.original_image_url = orig; "
+        "row.is_published = True; "
         "s.add(row); s.commit(); "
-        "print(f'updated {d} (image+original)')"
+        "print(f'updated {d} (image+original, published)')"
     )
     cmd = [
         "ssh", "mobtennis-ubuntu",
@@ -314,10 +329,16 @@ def main() -> None:
         help="Reprocess puzzles whose image_url already points at our "
              "public origin (i.e. previously processed).",
     )
+    parser.add_argument(
+        "--queue-only", action="store_true",
+        help="Only process the admin builder's queue (is_published=False). "
+             "Requires ADMIN_KEY env var. Use this for the normal new-puzzle "
+             "workflow; bare invocation operates on the full archive.",
+    )
     args = parser.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    puzzles = _fetch_calibrated_puzzles()
+    puzzles = _fetch_calibrated_puzzles(queue_only=args.queue_only)
     if args.date:
         puzzles = [p for p in puzzles if p["puzzle_date"] == args.date]
     log.info("processing %d puzzles", len(puzzles))

@@ -101,6 +101,8 @@ def _migrate() -> None:
         # spot_the_ball_puzzles is created by create_all on first run;
         # post-launch additions go here.
         ("spot_the_ball_puzzles", "original_image_url", "TEXT"),
+        ("spot_the_ball_puzzles", "player_image_id", "INTEGER"),
+        ("spot_the_ball_puzzles", "is_published", "INTEGER DEFAULT 0"),
         ("matches", "stats_json", "TEXT"),
         ("matches", "bracket_position", "INTEGER"),
         ("matches", "player1_seed", "INTEGER"),

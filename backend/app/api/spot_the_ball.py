@@ -42,12 +42,14 @@ def _view(row: SpotTheBallPuzzle) -> SpotTheBallPuzzleView:
 
 
 def _calibrated_filter():
-    """Puzzles are hidden until ball_x_pct + ball_y_pct land. Lets us
-    seed photos in advance without exposing un-calibrated rows on the
-    public archive."""
+    """Puzzles are hidden until: (a) ball coords are calibrated and
+    (b) the Replicate inpaint pipeline has run and flipped them to
+    is_published=True. Filters both lets us queue future puzzles in
+    the DB without exposing rows that still show the ball."""
     return (
         SpotTheBallPuzzle.ball_x_pct.is_not(None),
         SpotTheBallPuzzle.ball_y_pct.is_not(None),
+        SpotTheBallPuzzle.is_published == True,  # noqa: E712
     )
 
 
