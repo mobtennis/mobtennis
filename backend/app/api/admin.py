@@ -523,6 +523,38 @@ class QueueItem(BaseModel):
 
 
 @router.get(
+    "/spot-the-ball/by-date/{puzzle_date}",
+    response_model=SpotTheBallPuzzleView,
+    dependencies=[Depends(_require_admin_key)],
+)
+def admin_get_puzzle(
+    puzzle_date: date,
+    session: Session = Depends(get_session),
+):
+    """Admin-only fetch of a single puzzle by date. Bypasses the
+    is_published gate the public endpoint applies, so the calibrate
+    flow can edit queued puzzles before they go live."""
+    row = session.exec(
+        select(SpotTheBallPuzzle).where(SpotTheBallPuzzle.puzzle_date == puzzle_date)
+    ).first()
+    if not row:
+        raise HTTPException(404, "Puzzle not found")
+    return SpotTheBallPuzzleView(
+        puzzle_date=row.puzzle_date,
+        image_url=row.image_url,
+        original_image_url=row.original_image_url,
+        image_w=row.image_w,
+        image_h=row.image_h,
+        ball_x_pct=row.ball_x_pct or 50.0,
+        ball_y_pct=row.ball_y_pct or 50.0,
+        caption=row.caption,
+        credit=row.credit,
+        license_url=row.license_url,
+        source_url=row.source_url,
+    )
+
+
+@router.get(
     "/spot-the-ball/all",
     response_model=list[QueueItem],
     dependencies=[Depends(_require_admin_key)],

@@ -29,12 +29,15 @@ export default async function SpotTheBallByDate({
   const { calibrate } = await searchParams;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) notFound();
 
+  // In calibrate mode, hit the admin endpoint — bypasses the
+  // is_published gate so we can edit queued puzzles before they go
+  // live. Out of calibrate mode, use the public endpoint which only
+  // returns inpainted/published puzzles.
+  const fetchPath = calibrate
+    ? `/api/admin/spot-the-ball/by-date/${date}?key=${encodeURIComponent(calibrate)}`
+    : `/api/spot-the-ball/${date}`;
   const puzzle = await api<SpotTheBallPuzzle>(
-    `/api/spot-the-ball/${date}`,
-    // Calibration mode hits the public endpoint, which requires the
-    // puzzle to already be visible. If you're seeding a fresh row
-    // without coords, set ball_x_pct = 50.0 in the seed to make it
-    // visible, then calibrate to the real position via the click.
+    fetchPath,
     { revalidate: 0 },
   ).catch(() => null);
   if (!puzzle) notFound();
