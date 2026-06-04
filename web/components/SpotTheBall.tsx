@@ -67,7 +67,15 @@ export function SpotTheBall({
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [guess, setGuess] = useState<{ x_pct: number; y_pct: number } | null>(null);
   const [revealed, setRevealed] = useState(false);
-  const [calibrated, setCalibrated] = useState<{ x_pct: number; y_pct: number } | null>(null);
+  // In calibration mode, seed the marker from the row's currently-saved
+  // ball coords so an operator returning to a previously-calibrated
+  // puzzle SEES the saved position (rather than a blank canvas, which
+  // made it look like nothing had been saved).
+  const [calibrated, setCalibrated] = useState<{ x_pct: number; y_pct: number } | null>(
+    calibrateKey
+      ? { x_pct: puzzle.ball_x_pct, y_pct: puzzle.ball_y_pct }
+      : null,
+  );
   const [calibrateError, setCalibrateError] = useState<string | null>(null);
 
   // On mount, surface any prior score for this puzzle so a returning
@@ -201,11 +209,13 @@ export function SpotTheBall({
         <ResultPanel result={result} />
       )}
 
-      {/* Calibration feedback. */}
+      {/* Calibration feedback. Shows the currently-saved coords on
+          load (from puzzle props) and updates after each click + save. */}
       {calibrateKey && calibrated && !calibrateError && (
         <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-300">
-          Saved: ball at ({calibrated.x_pct.toFixed(1)}%, {calibrated.y_pct.toFixed(1)}%).
-          Click again to re-place.
+          Ball at ({calibrated.x_pct.toFixed(1)}%, {calibrated.y_pct.toFixed(1)}%).
+          Click anywhere on the photo to re-place; each click saves
+          immediately.
         </div>
       )}
       {calibrateKey && calibrateError && (
