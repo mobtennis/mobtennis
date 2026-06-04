@@ -52,6 +52,7 @@ CHANNELS: list[tuple[str, str]] = [
     ("wimbledon",      "UCNa8NxMgSm7m4Ii9d4QGk1Q"),
     ("ausopen",        "UCeTKJSW1NTAkf27nNmjWt5A"),
     ("usopen",         "UCXbboag48Qlr78zzz6SkzkQ"),
+    ("eurosport",      "UCxyDulPLBU9WiiN43xTs5FQ"),
 ]
 
 
