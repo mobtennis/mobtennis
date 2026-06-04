@@ -375,11 +375,15 @@ def _commons_file_page_url(upload_url: str) -> str | None:
 
 import re
 
-_YEAR_IN_URL = re.compile(r"(19[89]\d|20[0-3]\d)")
+# Require non-digit boundaries on both sides so a 4-digit run embedded
+# in a longer numeric ID (e.g. Flickr's "49745020396" → "2039") doesn't
+# match. Year range capped at 2029 — anything later is almost
+# certainly an ID artifact for now.
+_YEAR_IN_URL = re.compile(r"(?<!\d)(19[89]\d|20[0-2]\d)(?!\d)")
 
 
 def _photo_year(url: str) -> int:
-    """Pull the latest 4-digit year (1980-2039 range) from a Commons
+    """Pull the latest 4-digit year (1980-2029) from a Commons
     filename. Wikipedia photo filenames reliably include the event
     year — e.g. "Aryna Sabalenka at 2025 Miami Open 04" — and we
     use that to surface recent photos before stale ones."""
@@ -542,6 +546,44 @@ class QueueItem(BaseModel):
     is_published: bool
     ball_x_pct: float | None
     ball_y_pct: float | None
+
+
+@router.post(
+    "/spot-the-ball/by-date/{puzzle_date}/remove",
+    dependencies=[Depends(_require_admin_key)],
+)
+def admin_remove_puzzle(
+    puzzle_date: date,
+    session: Session = Depends(get_session),
+):
+    """Unschedule a previously-selected puzzle and put its source
+    image on the skip list so it doesn't bubble back into the
+    candidate pool. Used when the operator changes their mind about
+    a photo they already calibrated.
+
+    The schedule date frees up for a future puzzle automatically
+    because next-date selection looks at max(puzzle_date) across
+    remaining rows.
+    """
+    row = session.exec(
+        select(SpotTheBallPuzzle).where(SpotTheBallPuzzle.puzzle_date == puzzle_date)
+    ).first()
+    if not row:
+        raise HTTPException(404, "Puzzle not found")
+    # Pin the source image to the skip list (if we know it) so the
+    # builder doesn't show this same photo again. Hand-seeded rows
+    # have no player_image_id and just get deleted without a skip.
+    if row.player_image_id is not None:
+        existing = session.exec(
+            select(SpotTheBallSkip).where(
+                SpotTheBallSkip.player_image_id == row.player_image_id,
+            )
+        ).first()
+        if not existing:
+            session.add(SpotTheBallSkip(player_image_id=row.player_image_id))
+    session.delete(row)
+    session.commit()
+    return {"removed": str(puzzle_date)}
 
 
 @router.get(

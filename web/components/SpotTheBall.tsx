@@ -103,6 +103,23 @@ export function SpotTheBall({
     return { distance_pct, band };
   }, [guess, puzzle.ball_x_pct, puzzle.ball_y_pct]);
 
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removed, setRemoved] = useState(false);
+
+  const onRemove = async () => {
+    if (!calibrateKey) return;
+    if (!window.confirm("Remove this puzzle and skip the source image permanently?")) return;
+    setRemoveError(null);
+    try {
+      const url = `${API_BASE}/api/admin/spot-the-ball/by-date/${puzzle.puzzle_date}/remove?key=${encodeURIComponent(calibrateKey)}`;
+      const res = await fetch(url, { method: "POST" });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      setRemoved(true);
+    } catch (err) {
+      setRemoveError(String(err));
+    }
+  };
+
   const onImageClick = async (e: React.MouseEvent<HTMLDivElement>) => {
     const el = imgRef.current;
     if (!el) return;
@@ -219,11 +236,39 @@ export function SpotTheBall({
 
       {/* Calibration feedback. Shows the currently-saved coords on
           load (from puzzle props) and updates after each click + save. */}
-      {calibrateKey && calibrated && !calibrateError && (
+      {calibrateKey && calibrated && !calibrateError && !removed && (
         <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-300">
           Ball at ({calibrated.x_pct.toFixed(1)}%, {calibrated.y_pct.toFixed(1)}%).
           Click anywhere on the photo to re-place; each click saves
           immediately.
+        </div>
+      )}
+
+      {/* Remove / skip button — visible in admin calibrate mode. Deletes
+          the puzzle row and pins the source image on the skip list. */}
+      {calibrateKey && !removed && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={onRemove}
+            className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-sm font-medium text-red-300 hover:bg-red-500/20"
+          >
+            Remove + skip image
+          </button>
+          <span className="text-xs text-text-muted">
+            Use this if the photo turned out wrong on closer look.
+          </span>
+        </div>
+      )}
+      {calibrateKey && removed && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
+          Removed. Source image is now on the skip list — go back to
+          the builder for the next candidate.
+        </div>
+      )}
+      {removeError && (
+        <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+          Remove failed: {removeError}
         </div>
       )}
       {calibrateKey && calibrateError && (
