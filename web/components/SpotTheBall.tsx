@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { API_BASE, type SpotTheBallPuzzle } from "@/lib/api";
@@ -104,7 +106,10 @@ export function SpotTheBall({
   }, [guess, puzzle.ball_x_pct, puzzle.ball_y_pct]);
 
   const [removeError, setRemoveError] = useState<string | null>(null);
-  const [removed, setRemoved] = useState(false);
+  const router = useRouter();
+  const queueHref = calibrateKey
+    ? `/admin/spot-the-ball/queue?key=${encodeURIComponent(calibrateKey)}`
+    : null;
 
   const onRemove = async () => {
     if (!calibrateKey) return;
@@ -114,7 +119,9 @@ export function SpotTheBall({
       const url = `${API_BASE}/api/admin/spot-the-ball/by-date/${puzzle.puzzle_date}/remove?key=${encodeURIComponent(calibrateKey)}`;
       const res = await fetch(url, { method: "POST" });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      setRemoved(true);
+      // Bounce back to the queue — the puzzle's gone, no reason to
+      // linger on a page that's about to 404 on refresh.
+      if (queueHref) router.push(queueHref);
     } catch (err) {
       setRemoveError(String(err));
     }
@@ -236,7 +243,7 @@ export function SpotTheBall({
 
       {/* Calibration feedback. Shows the currently-saved coords on
           load (from puzzle props) and updates after each click + save. */}
-      {calibrateKey && calibrated && !calibrateError && !removed && (
+      {calibrateKey && calibrated && !calibrateError && (
         <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-300">
           Ball at ({calibrated.x_pct.toFixed(1)}%, {calibrated.y_pct.toFixed(1)}%).
           Click anywhere on the photo to re-place; each click saves
@@ -244,10 +251,17 @@ export function SpotTheBall({
         </div>
       )}
 
-      {/* Remove / skip button — visible in admin calibrate mode. Deletes
-          the puzzle row and pins the source image on the skip list. */}
-      {calibrateKey && !removed && (
+      {/* Admin controls — Remove + Back-to-queue. Both navigate; the
+          calibrate page is a leaf and the queue is the natural home
+          for cross-puzzle work. */}
+      {calibrateKey && queueHref && (
         <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href={queueHref}
+            className="rounded-md border border-ink-700 px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-ink-800"
+          >
+            ← Back to queue
+          </Link>
           <button
             type="button"
             onClick={onRemove}
@@ -255,15 +269,6 @@ export function SpotTheBall({
           >
             Remove + skip image
           </button>
-          <span className="text-xs text-text-muted">
-            Use this if the photo turned out wrong on closer look.
-          </span>
-        </div>
-      )}
-      {calibrateKey && removed && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
-          Removed. Source image is now on the skip list — go back to
-          the builder for the next candidate.
         </div>
       )}
       {removeError && (
