@@ -373,6 +373,20 @@ def _commons_file_page_url(upload_url: str) -> str | None:
     return f"https://commons.wikimedia.org/wiki/File:{quote(filename)}"
 
 
+import re
+
+_YEAR_IN_URL = re.compile(r"(19[89]\d|20[0-3]\d)")
+
+
+def _photo_year(url: str) -> int:
+    """Pull the latest 4-digit year (1980-2039 range) from a Commons
+    filename. Wikipedia photo filenames reliably include the event
+    year — e.g. "Aryna Sabalenka at 2025 Miami Open 04" — and we
+    use that to surface recent photos before stale ones."""
+    years = _YEAR_IN_URL.findall(url or "")
+    return max((int(y) for y in years), default=0)
+
+
 def _player_query_candidate(
     session: Session, exclude_image_ids: set[int],
 ) -> tuple[PlayerImage, Player] | None:
@@ -386,9 +400,9 @@ def _player_query_candidate(
       * Image isn't already used in a puzzle AND hasn't been skipped.
       * Image isn't hidden.
 
-    Ordered by image id (stable, predictable progression through
-    the queue) rather than randomly so re-opens land on the same
-    photo as before any skip/schedule action.
+    Ordered by photo year (newest first), parsed from the Commons
+    filename. Falls back to image id for tie-breaking so the order
+    is deterministic — same image surfaces on a re-open.
     """
     stmt = (
         select(PlayerImage, Player)
@@ -398,11 +412,19 @@ def _player_query_candidate(
             PlayerImage.is_hidden == False,        # noqa: E712
             (Player.current_rank.is_not(None)) | (Player.career_high_rank <= 300),
         )
-        .order_by(PlayerImage.id.asc())
     )
     if exclude_image_ids:
         stmt = stmt.where(PlayerImage.id.notin_(exclude_image_ids))
-    return session.exec(stmt).first()
+    rows = session.exec(stmt).all()
+    if not rows:
+        return None
+    # Sort in Python — SQLite has no portable regex extract for
+    # year-in-URL, and we'd lose much by trying to bake it into SQL.
+    # ~1k rows is cheap to sort per request.
+    rows.sort(
+        key=lambda t: (-_photo_year(t[0].url), -t[0].id),
+    )
+    return rows[0]
 
 
 def _excluded_image_ids(session: Session) -> set[int]:
