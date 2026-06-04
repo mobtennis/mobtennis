@@ -37,6 +37,23 @@ API_BASE = "https://api.mob.tennis"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "web" / "public" / "spot-the-ball"
 
+# Original Wikimedia URLs by puzzle_date. We overwrote image_url with
+# the local path on first-pass processing, so this map lets a re-run
+# pull the pristine source instead of the already-edited copy.
+#
+# Long-term fix would be a separate `original_image_url` column on the
+# row, but a hardcoded map here is fine for the seeded set — when we
+# add new puzzles via the seed script, append to this dict at the
+# same time.
+SOURCE_URLS: dict[str, str] = {
+    "2026-06-04": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Rich%C3%A8l_Hogenkamp_-_Masters_de_Madrid_2015_-_11.jpg/960px-Rich%C3%A8l_Hogenkamp_-_Masters_de_Madrid_2015_-_11.jpg",
+    "2026-06-03": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b6/2017_US_Open_Tennis_-_Qualifying_Rounds_-_Viktoriya_Tomova_%28BUL%29_def._Polona_Hercog_%28SLO%29_%2836916572131%29.jpg/960px-2017_US_Open_Tennis_-_Qualifying_Rounds_-_Viktoriya_Tomova_%28BUL%29_def._Polona_Hercog_%28SLO%29_%2836916572131%29.jpg",
+    "2026-06-02": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Kei_Nishikori_1%2C_Wimbledon_2013_-_Diliff.jpg/960px-Kei_Nishikori_1%2C_Wimbledon_2013_-_Diliff.jpg",
+    "2026-06-01": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Ana_Ivanovi%C4%87_-_Masters_de_Madrid_2015_-_01.jpg/960px-Ana_Ivanovi%C4%87_-_Masters_de_Madrid_2015_-_01.jpg",
+    "2026-05-31": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Javier_Mart%C3%AD_-_Masters_de_Madrid_2015_-_12.jpg/960px-Javier_Mart%C3%AD_-_Masters_de_Madrid_2015_-_12.jpg",
+    "2026-05-30": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/Andreea_Mitu_-_Masters_de_Madrid_2015_-_05.jpg/960px-Andreea_Mitu_-_Masters_de_Madrid_2015_-_05.jpg",
+}
+
 # Ball-area radius in pixels at the canonical 960px image width.
 # Scaled per-image to the actual width. Tennis balls in close shots
 # typically span ~15-25px; we over-paint to ~30px to leave no halo.
@@ -105,6 +122,92 @@ def _sample_background_color(
     samples_r.sort(); samples_g.sort(); samples_b.sort()
     mid = len(samples_r) // 2
     return (samples_r[mid], samples_g[mid], samples_b[mid])
+
+
+def _surface_hint_from_caption(caption: str) -> str:
+    """Infer surface from the photo caption — Flux fill produces
+    cleaner output when you tell it what should be there. Madrid /
+    Roland Garros / Rome / Monte Carlo are clay; Wimbledon is
+    grass; everything else is hard.
+    """
+    c = (caption or "").lower()
+    if any(k in c for k in ("madrid", "roland", "french open", "rome", "monte carlo")):
+        return "red clay tennis court surface"
+    if "wimbledon" in c:
+        return "green grass tennis court surface"
+    return "blue hard tennis court surface"
+
+
+def _ai_inpaint_ball(
+    im: Image.Image, ball_x_pct: float, ball_y_pct: float, caption: str,
+) -> Image.Image:
+    """Replicate Flux fill — context-aware inpainting that actually
+    reconstructs the background where the ball was, even when the ball
+    overlaps the player's body. Costs ~$0.04 per image.
+
+    Requires REPLICATE_API_TOKEN in env.
+    """
+    import os
+    import replicate
+
+    if not os.environ.get("REPLICATE_API_TOKEN"):
+        raise RuntimeError(
+            "REPLICATE_API_TOKEN not set — export it before --use-ai",
+        )
+
+    w, h = im.size
+    cx = int(round(w * ball_x_pct / 100))
+    cy = int(round(h * ball_y_pct / 100))
+    # Mask radius: generous so the model has room to reconstruct
+    # the texture without leaving a halo of original-ball pixels.
+    mask_r = max(30, int(round(55 * w / 960)))
+
+    mask = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(mask).ellipse(
+        [(cx - mask_r, cy - mask_r), (cx + mask_r, cy + mask_r)],
+        fill=255,
+    )
+    # Light blur on the mask edge so the model blends rather than
+    # producing a sharp boundary.
+    mask = mask.filter(ImageFilter.GaussianBlur(radius=4))
+
+    img_buf = io.BytesIO()
+    im.save(img_buf, "JPEG", quality=92)
+    img_buf.seek(0)
+    mask_buf = io.BytesIO()
+    mask.save(mask_buf, "PNG")
+    mask_buf.seek(0)
+
+    surface = _surface_hint_from_caption(caption)
+    prompt = (
+        f"clean {surface} background, photorealistic, seamless, "
+        f"matches the surrounding texture exactly, no objects, no ball"
+    )
+    log.info("  replicate flux-fill: mask r=%d at (%d,%d) prompt=%r",
+             mask_r, cx, cy, surface)
+
+    output = replicate.run(
+        "black-forest-labs/flux-fill-dev",
+        input={
+            "image": img_buf,
+            "mask": mask_buf,
+            "prompt": prompt,
+            "num_inference_steps": 28,
+            "guidance": 30,
+            "output_format": "jpg",
+            "output_quality": 92,
+        },
+    )
+
+    # SDK returns either a file-like object, a URL string, or a list.
+    if isinstance(output, list):
+        output = output[0]
+    if hasattr(output, "read"):
+        data = output.read()
+    else:
+        with urllib.request.urlopen(str(output)) as r:
+            data = r.read()
+    return Image.open(io.BytesIO(data)).convert("RGB")
 
 
 def _inpaint_ball(
@@ -191,6 +294,16 @@ def main() -> None:
         "--date", default=None,
         help="Process a single puzzle by ISO date instead of all.",
     )
+    parser.add_argument(
+        "--use-ai", action="store_true",
+        help="Use Replicate Flux fill instead of the Pillow median-sample "
+             "fallback. Requires REPLICATE_API_TOKEN. ~$0.04 per image.",
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Reprocess puzzles whose image_url already points at our "
+             "public origin (i.e. previously processed).",
+    )
     args = parser.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -203,15 +316,24 @@ def main() -> None:
     for i, p in enumerate(puzzles):
         d = p["puzzle_date"]
         log.info("[%s] %s", d, p.get("caption", ""))
-        if p["image_url"].startswith(args.public_base):
-            log.info("  already pointing at processed URL; reprocessing source not yet supported, skipping")
+        if not args.force and p["image_url"].startswith(args.public_base):
+            log.info("  already pointing at processed URL; --force to redo")
             continue
+        # Prefer the hardcoded original source over the row's image_url
+        # because image_url was overwritten with the local path on the
+        # first processing pass.
+        source = SOURCE_URLS.get(d, p["image_url"])
         if i > 0:
             # Throttle between source downloads to keep Wikimedia happy.
             time.sleep(1.5)
         try:
-            im = _download(p["image_url"])
-            edited = _inpaint_ball(im, p["ball_x_pct"], p["ball_y_pct"])
+            im = _download(source)
+            if args.use_ai:
+                edited = _ai_inpaint_ball(
+                    im, p["ball_x_pct"], p["ball_y_pct"], p.get("caption", ""),
+                )
+            else:
+                edited = _inpaint_ball(im, p["ball_x_pct"], p["ball_y_pct"])
         except Exception:
             log.exception("  failed to process %s", d)
             continue
