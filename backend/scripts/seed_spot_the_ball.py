@@ -66,6 +66,13 @@ SEEDS: list[dict] = [
         "license_url": "https://creativecommons.org/licenses/by-sa/2.0/",
         "source_url": "https://commons.wikimedia.org/wiki/File:Javier_Mart%C3%AD_-_Masters_de_Madrid_2015_-_12.jpg",
     },
+    {
+        "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/Andreea_Mitu_-_Masters_de_Madrid_2015_-_05.jpg/960px-Andreea_Mitu_-_Masters_de_Madrid_2015_-_05.jpg",
+        "caption": "Andreea Mitu · Madrid Open 2015",
+        "credit": "Tatiana · CC BY-SA 2.0",
+        "license_url": "https://creativecommons.org/licenses/by-sa/2.0/",
+        "source_url": "https://commons.wikimedia.org/wiki/File:Andreea_Mitu_-_Masters_de_Madrid_2015_-_05.jpg",
+    },
 ]
 
 
