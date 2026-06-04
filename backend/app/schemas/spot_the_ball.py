@@ -13,6 +13,7 @@ class SpotTheBallPuzzleView(BaseModel):
     """
     puzzle_date: date
     image_url: str
+    original_image_url: str | None = None
     image_w: int | None = None
     image_h: int | None = None
     ball_x_pct: float

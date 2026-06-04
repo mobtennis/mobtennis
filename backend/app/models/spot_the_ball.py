@@ -25,11 +25,17 @@ class SpotTheBallPuzzle(SQLModel, table=True):
     # When this puzzle is the "daily" — also used as URL slug.
     puzzle_date: date = Field(index=True, unique=True)
 
-    # Image displayed to the user. For v1 these are Wikimedia URLs
-    # (the helper rewrites to canonical thumbnail sizes at render
-    # time). Later versions will host edited "ball-removed" variants
-    # — see the README on this folder once we have one.
+    # Ball-removed image displayed during the puzzle. Local URL once
+    # we've run the Flux-fill inpaint pipeline (web/public/spot-the-
+    # ball/{date}.jpg via /spot-the-ball/{date}.jpg).
     image_url: str
+
+    # Original photo with the ball still in it. Shown on the reveal
+    # after the user locks in their guess — the "ohhh, THAT's where
+    # it was" moment. Nullable for backwards compatibility with the
+    # earliest seeded rows; the reveal falls back to the inpainted
+    # image with a pin overlay when null.
+    original_image_url: str | None = None
 
     # Native intrinsic dimensions of the image we're showing.
     # Nullable — the frontend reads `naturalWidth` / `naturalHeight`

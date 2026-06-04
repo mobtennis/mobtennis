@@ -411,6 +411,10 @@ export type NewsSource = {
 export type SpotTheBallPuzzle = {
   puzzle_date: string;   // ISO YYYY-MM-DD
   image_url: string;
+  /** Pre-inpaint photo with the ball still visible — shown on reveal
+   *  for the "ahh, THERE it was" moment. Null on early-seeded rows;
+   *  reveal falls back to the inpainted image. */
+  original_image_url: string | null;
   image_w: number | null;
   image_h: number | null;
   ball_x_pct: number;    // 0..100

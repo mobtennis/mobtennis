@@ -27,6 +27,7 @@ def _view(row: SpotTheBallPuzzle) -> SpotTheBallPuzzleView:
     return SpotTheBallPuzzleView(
         puzzle_date=row.puzzle_date,
         image_url=row.image_url,
+        original_image_url=row.original_image_url,
         image_w=row.image_w,
         image_h=row.image_h,
         # Public endpoint only returns puzzles with coords calibrated;

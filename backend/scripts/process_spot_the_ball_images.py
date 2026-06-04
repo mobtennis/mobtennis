@@ -254,22 +254,32 @@ def _fetch_calibrated_puzzles() -> list[dict]:
     return out
 
 
-def _prod_update_image_url(puzzle_date: str, new_url: str) -> None:
-    """SSH into prod and patch the row. Cheap one-shot — keeps the
-    main admin API surface narrow (no image-url endpoint needed)."""
+def _prod_update_image_url(
+    puzzle_date: str, new_url: str, original_url: str,
+) -> None:
+    """SSH into prod and patch the row. Sets both:
+
+      * image_url        — the inpainted local URL the puzzle uses
+      * original_image_url — the pristine source we just downloaded
+                             from (used by the reveal swap so players
+                             see the actual ball after their guess)
+
+    Cheap one-shot — keeps the admin API surface narrow.
+    """
     py = (
         "from sqlmodel import Session, select; "
         "from app.db.session import engine; "
         "from app.models.spot_the_ball import SpotTheBallPuzzle; "
         "from datetime import date; "
-        "import sys; "
         f"d = date.fromisoformat({puzzle_date!r}); "
         f"new = {new_url!r}; "
+        f"orig = {original_url!r}; "
         "s = Session(engine); "
         "row = s.exec(select(SpotTheBallPuzzle).where(SpotTheBallPuzzle.puzzle_date == d)).first(); "
         "row.image_url = new; "
+        "row.original_image_url = orig; "
         "s.add(row); s.commit(); "
-        "print(f'updated {d} -> {new}')"
+        "print(f'updated {d} (image+original)')"
     )
     cmd = [
         "ssh", "mobtennis-ubuntu",
@@ -342,7 +352,7 @@ def main() -> None:
         log.info("  wrote %s (%d KB)", out_path, out_path.stat().st_size // 1024)
         if not args.skip_db_update:
             new_url = f"{args.public_base}/spot-the-ball/{d}.jpg"
-            _prod_update_image_url(d, new_url)
+            _prod_update_image_url(d, new_url, source)
 
 
 if __name__ == "__main__":

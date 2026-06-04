@@ -168,10 +168,18 @@ export function SpotTheBall({
           revealed && !calibrateKey ? "cursor-default" : "cursor-crosshair"
         }`}
       >
+        {/* On reveal, swap to the original photo so the user sees the
+            ball they were trying to find — the satisfying "oh THAT's
+            where it was" moment. Falls back to the inpainted image
+            when no original is available (legacy rows pre-Flux). */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           ref={imgRef}
-          src={puzzle.image_url}
+          src={
+            !calibrateKey && revealed && puzzle.original_image_url
+              ? puzzle.original_image_url
+              : puzzle.image_url
+          }
           alt={puzzle.caption}
           className="block h-auto w-full"
           draggable={false}
