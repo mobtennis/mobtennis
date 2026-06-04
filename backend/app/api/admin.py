@@ -406,16 +406,16 @@ def _player_query_candidate(
 
 
 def _excluded_image_ids(session: Session) -> set[int]:
+    # SQLModel returns scalars (not 1-tuples) when the select picks a
+    # single column, so iterate as plain ints.
     used = {
-        r for (r,) in session.exec(
+        r for r in session.exec(
             select(SpotTheBallPuzzle.player_image_id)
             .where(SpotTheBallPuzzle.player_image_id.is_not(None))
         ).all()
         if r is not None
     }
-    skipped = {
-        r for (r,) in session.exec(select(SpotTheBallSkip.player_image_id)).all()
-    }
+    skipped = set(session.exec(select(SpotTheBallSkip.player_image_id)).all())
     return used | skipped
 
 
