@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { API_BASE } from "@/lib/api";
@@ -145,14 +146,20 @@ export function SpotTheBallBuilder({ adminKey }: { adminKey: string }) {
 
   return (
     <div className="space-y-4 p-3">
-      <header className="space-y-1">
-        <h1 className="text-xl font-bold tracking-tight">Spot the ball · builder</h1>
-        <p className="text-xs text-text-muted">
-          Click the ball to schedule the image as a future puzzle. Skip
-          to drop it from the pool. Scheduled puzzles enter the queue
-          and need a local Replicate run to inpaint before they go
-          public.
-        </p>
+      <header className="flex items-baseline justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-xl font-bold tracking-tight">Spot the ball · builder</h1>
+          <p className="text-xs text-text-muted">
+            Click the ball to schedule. Skip to discard. Scheduled
+            puzzles enter the queue and need a local Replicate run.
+          </p>
+        </div>
+        <Link
+          href={`/admin/spot-the-ball/queue?key=${encodeURIComponent(adminKey)}`}
+          className="text-sm font-medium text-accent hover:text-accent-dim"
+        >
+          View queue →
+        </Link>
       </header>
 
       {stats && (

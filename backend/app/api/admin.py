@@ -510,6 +510,47 @@ def builder_skip(body: SkipBody, session: Session = Depends(get_session)):
     }
 
 
+class QueueItem(BaseModel):
+    """One row in the admin queue listing. Lighter than the public
+    puzzle view because the list page renders dozens at once."""
+    puzzle_date: date
+    caption: str
+    image_url: str           # current (post-Replicate when published)
+    original_image_url: str | None
+    is_published: bool
+    ball_x_pct: float | None
+    ball_y_pct: float | None
+
+
+@router.get(
+    "/spot-the-ball/all",
+    response_model=list[QueueItem],
+    dependencies=[Depends(_require_admin_key)],
+)
+def builder_all(session: Session = Depends(get_session)):
+    """Every puzzle the admin has ever touched, newest first. Drives
+    the queue/verification page — shows scheduled-but-not-processed
+    alongside already-published ones, with the status badge so the
+    operator knows where each one stands."""
+    rows = session.exec(
+        select(SpotTheBallPuzzle)
+        .where(SpotTheBallPuzzle.ball_x_pct.is_not(None))
+        .order_by(SpotTheBallPuzzle.puzzle_date.desc())
+    ).all()
+    return [
+        QueueItem(
+            puzzle_date=r.puzzle_date,
+            caption=r.caption,
+            image_url=r.image_url,
+            original_image_url=r.original_image_url,
+            is_published=r.is_published,
+            ball_x_pct=r.ball_x_pct,
+            ball_y_pct=r.ball_y_pct,
+        )
+        for r in rows
+    ]
+
+
 @router.get(
     "/spot-the-ball/queue",
     response_model=list[SpotTheBallPuzzleView],
