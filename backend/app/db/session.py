@@ -98,6 +98,8 @@ def _migrate() -> None:
         ("players", "hero_image_url", "TEXT"),
         ("player_images", "is_hero", "INTEGER DEFAULT 0"),
         ("player_images", "is_hero_eligible", "INTEGER DEFAULT 0"),
+        # spot_the_ball_puzzles is created by create_all on first run;
+        # no per-column migration needed for the initial release.
         ("matches", "stats_json", "TEXT"),
         ("matches", "bracket_position", "INTEGER"),
         ("matches", "player1_seed", "INTEGER"),

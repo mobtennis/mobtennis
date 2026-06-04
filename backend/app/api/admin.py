@@ -30,8 +30,10 @@ from app.db.session import get_session
 from app.models.digest import EditorialDigest
 from app.models.player import Player
 from app.models.player_image import PlayerImage
+from app.models.spot_the_ball import SpotTheBallPuzzle
 from app.schemas.digest import CampaignBrief, CampaignBriefsResponse
 from app.schemas.player import PlayerImageView
+from app.schemas.spot_the_ball import SpotTheBallPuzzleView
 from app.services.editorial_digest import generate_digest
 from app.services.players_image_enrich import _sync_primary_pointer
 
@@ -272,4 +274,57 @@ def set_player_image_hidden(
         license_url=target.license_url, width=target.width, height=target.height,
         is_primary=target.is_primary, is_hidden=target.is_hidden,
         is_hero=target.is_hero, is_hero_eligible=target.is_hero_eligible,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Spot-the-Ball calibration
+# ---------------------------------------------------------------------------
+
+
+class CalibrateBallBody(BaseModel):
+    """Ball position in image-space as percentages (0-100). Match the
+    storage shape on the row so the field is stable at any display
+    size."""
+    ball_x_pct: float
+    ball_y_pct: float
+
+
+@router.post(
+    "/spot-the-ball/{puzzle_date}/ball",
+    response_model=SpotTheBallPuzzleView,
+    dependencies=[Depends(_require_admin_key)],
+)
+def calibrate_ball(
+    puzzle_date: date,
+    body: CalibrateBallBody,
+    session: Session = Depends(get_session),
+):
+    """Set the true ball coordinates for a seeded puzzle. The play
+    page exposes a calibration mode (`?calibrate=ADMIN_KEY`) that
+    POSTs here when an operator clicks on the actual ball; bypasses
+    needing to edit JSON / inspect images in a separate tool."""
+    row = session.exec(
+        select(SpotTheBallPuzzle).where(SpotTheBallPuzzle.puzzle_date == puzzle_date)
+    ).first()
+    if not row:
+        raise HTTPException(404, "Puzzle not found")
+    # Clamp to the legal % range — guards against floating-point drift
+    # if the click lands a pixel outside the image rect.
+    row.ball_x_pct = max(0.0, min(100.0, body.ball_x_pct))
+    row.ball_y_pct = max(0.0, min(100.0, body.ball_y_pct))
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return SpotTheBallPuzzleView(
+        puzzle_date=row.puzzle_date,
+        image_url=row.image_url,
+        image_w=row.image_w,
+        image_h=row.image_h,
+        ball_x_pct=row.ball_x_pct,
+        ball_y_pct=row.ball_y_pct,
+        caption=row.caption,
+        credit=row.credit,
+        license_url=row.license_url,
+        source_url=row.source_url,
     )

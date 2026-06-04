@@ -19,6 +19,7 @@ from app.api import (
     push,
     rankings,
     search,
+    spot_the_ball,
     stream,
     tournaments,
     videos,
@@ -240,4 +241,5 @@ app.include_router(search.router)
 app.include_router(stream.router)
 app.include_router(videos.router)
 app.include_router(digest.router)
+app.include_router(spot_the_ball.router)
 app.include_router(admin.router)

@@ -408,6 +408,25 @@ export type NewsSource = {
   source: string;
 };
 
+export type SpotTheBallPuzzle = {
+  puzzle_date: string;   // ISO YYYY-MM-DD
+  image_url: string;
+  image_w: number | null;
+  image_h: number | null;
+  ball_x_pct: number;    // 0..100
+  ball_y_pct: number;
+  caption: string;
+  credit: string | null;
+  license_url: string | null;
+  source_url: string | null;
+};
+
+export type SpotTheBallArchiveItem = {
+  puzzle_date: string;
+  caption: string;
+  image_url: string;
+};
+
 export type DigestDetail = DigestSummary & {
   body_md: string;
   model_name: string;
