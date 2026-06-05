@@ -463,6 +463,23 @@ def builder_schedule(
     if not player:
         raise HTTPException(404, "Player not found")
 
+    # Idempotency: refuse to create a second SpotTheBallImage for the
+    # same source PlayerImage. Double-clicks / stale candidate state
+    # previously produced 2-3 STB rows pointing at the same photo,
+    # then the bundler dropped copies of the same image into separate
+    # sets — players saw the same Sabalenka three days running.
+    existing = session.exec(
+        select(SpotTheBallImage).where(
+            SpotTheBallImage.source_player_image_id == body.player_image_id,
+        )
+    ).first()
+    if existing:
+        return ScheduleResponse(
+            image_id=existing.id,
+            next_candidate=_next_candidate_for_builder(session),
+            stats=_candidate_stats(session),
+        )
+
     caption = body.caption or player.full_name or "Spot the ball"
     new = SpotTheBallImage(
         set_id=None,                              # pool — bundler will assign
