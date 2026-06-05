@@ -27,6 +27,12 @@ export function TopBar() {
           <Link href="/tournaments" className="hover:text-text-primary">Tournaments</Link>
           <Link href="/rankings/atp" className="hover:text-text-primary">Rankings</Link>
           <Link href="/news" className="hover:text-text-primary">News</Link>
+          <Link
+            href="/play/spot-the-ball"
+            className="hover:text-text-primary"
+          >
+            Play
+          </Link>
           <Link href="/following" className="text-accent hover:text-accent-dim">Get the app</Link>
         </nav>
         <Link

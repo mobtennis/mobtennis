@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 
 import {
@@ -10,6 +11,7 @@ import {
 import { MatchCard } from "@/components/MatchCard";
 import { MatchFilterBar } from "@/components/MatchFilters";
 import { SectionHeader } from "@/components/SectionHeader";
+import { SpotTheBallHomeCard } from "@/components/SpotTheBallHomeCard";
 import { TournamentCard } from "@/components/TournamentCard";
 import { passesFilter } from "@/lib/match-filters";
 import { useMatchFilters } from "@/lib/match-filters-client";
@@ -56,47 +58,54 @@ export function HappeningNow({ liveMatches, upcomingFeatured, tIndex }: Props) {
     return tours.flatMap((tour) => bag.get(`${tour}/${t.slug}/${t.year}`) ?? []);
   };
 
+  // Build the list of tournament blocks first (some non-big rows
+  // return null and we don't want those counted toward "first"),
+  // then inject the Spot the Ball card right after the first
+  // rendered block. Premium real estate without burying the live
+  // tournament that's the headline.
+  const renderedBlocks: React.ReactNode[] = [];
+  for (const t of ongoing) {
+    const isBig = BIG_TIERS.has(t.category);
+    const allLive = collectForTournament(t, liveByKey);
+    const liveFiltered = allLive.filter((m) => passesFilter(m, effective));
+
+    let upcomingFiltered: MatchSummary[] = [];
+    if (isBig) {
+      const allUpcoming = collectForTournament(t, upcomingByKey);
+      upcomingFiltered = allUpcoming
+        .filter((m) => passesFilter(m, effective))
+        .slice(0, UPCOMING_PER_BIG);
+    }
+
+    if (!isBig && allLive.length > 0 && liveFiltered.length === 0) continue;
+    if (!isBig && allLive.length === 0) continue;
+
+    renderedBlocks.push(
+      <OngoingTournamentBlock
+        key={`${t.tour}/${t.slug}/${t.year}`}
+        tournament={t}
+        liveMatches={liveFiltered}
+        upcomingMatches={upcomingFiltered}
+        isBig={isBig}
+      />,
+    );
+  }
+
   return (
     <section>
       <SectionHeader title="Happening now" />
       <div className="mt-2 space-y-3">
         <MatchFilterBar />
-        {ongoing.map((t) => {
-          const isBig = BIG_TIERS.has(t.category);
-          const allLive = collectForTournament(t, liveByKey);
-          const liveFiltered = allLive.filter((m) => passesFilter(m, effective));
-
-          // Upcoming only for big tournaments. We take up to N filtered
-          // matches; the backend already returns soonest-first.
-          let upcomingFiltered: MatchSummary[] = [];
-          if (isBig) {
-            const allUpcoming = collectForTournament(t, upcomingByKey);
-            upcomingFiltered = allUpcoming
-              .filter((m) => passesFilter(m, effective))
-              .slice(0, UPCOMING_PER_BIG);
-          }
-
-          // Hide a non-big tournament if its only matches were filtered
-          // out — keeping the empty teaser card would suggest activity
-          // the user has explicitly hidden.
-          if (!isBig && allLive.length > 0 && liveFiltered.length === 0) {
-            return null;
-          }
-          // Hide a non-big tournament that has no live matches at all
-          // (current behaviour — only big tournaments get the "always
-          // visible" treatment).
-          if (!isBig && allLive.length === 0) return null;
-
-          return (
-            <OngoingTournamentBlock
-              key={`${t.tour}/${t.slug}/${t.year}`}
-              tournament={t}
-              liveMatches={liveFiltered}
-              upcomingMatches={upcomingFiltered}
-              isBig={isBig}
-            />
-          );
-        })}
+        {renderedBlocks.map((block, i) => (
+          <React.Fragment key={i}>
+            {block}
+            {i === 0 && <SpotTheBallHomeCard />}
+          </React.Fragment>
+        ))}
+        {/* If there are zero rendered tournament blocks (all filtered
+            out by the user's pill selection), the game card still
+            shows — useful idle-state UX. */}
+        {renderedBlocks.length === 0 && <SpotTheBallHomeCard />}
       </div>
     </section>
   );
