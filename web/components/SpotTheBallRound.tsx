@@ -156,6 +156,16 @@ export function SpotTheBallRound({
     }
   }, [current, guess, distanceForGuess, idx, total, results, practice, thisSet.id]);
 
+  // Auto-advance on the LAST image: once revealed, give the player ~1.6s
+  // to register the truth pin landing, then transition to the summary
+  // without needing a button tap. On mobile that button can sit below
+  // the fold; the auto-advance removes the "did anything happen?" pause.
+  useEffect(() => {
+    if (!revealed || idx + 1 < total) return;
+    const t = setTimeout(() => advance(), 1600);
+    return () => clearTimeout(t);
+  }, [revealed, idx, total, advance]);
+
   if (savedSummary && !practice) {
     return (
       <RoundSummaryView
@@ -220,14 +230,21 @@ export function SpotTheBallRound({
         <ResultPanel distance_pct={distanceForGuess} />
       )}
 
-      {revealed && (
+      {revealed && idx + 1 < total && (
         <button
           type="button"
           onClick={advance}
           className="w-full rounded-md bg-accent px-4 py-3 text-sm font-bold uppercase tracking-wider text-white hover:bg-accent-dim"
         >
-          {idx + 1 < total ? `Next (${idx + 2}/${total}) →` : "Finish round →"}
+          Next ({idx + 2}/{total}) →
         </button>
+      )}
+      {revealed && idx + 1 >= total && (
+        // Last image — auto-advance handles transition; render a subtle
+        // hint instead of a button so the player knows results are coming.
+        <div className="rounded-md border border-ink-700 bg-ink-900 px-4 py-3 text-center text-sm text-text-secondary">
+          Tallying your round…
+        </div>
       )}
 
       {(current.credit || current.source_url) && (
