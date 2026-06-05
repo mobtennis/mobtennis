@@ -482,13 +482,28 @@ function ShareCard({
   const [copied, setCopied] = useState(false);
 
   const max_possible = summary.results.length * 100;
+  // Two encodings of the same pattern:
+  //   * `pattern` — emoji squares for the visible / clipboard text
+  //   * `patternCode` — compact letter form (P/C/M) for the URL,
+  //                     keeps the share link cheap and emoji-free
   const pattern = summary.results
     .map((r) => (r.band === "perfect" ? "🟩" : r.band === "close" ? "🟨" : "🟥"))
     .join("");
-  const shareUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/play/spot-the-ball/sets/${setId}`
-      : `https://mob.tennis/play/spot-the-ball/sets/${setId}`;
+  const patternCode = summary.results
+    .map((r) => (r.band === "perfect" ? "P" : r.band === "close" ? "C" : "M"))
+    .join("");
+  const origin =
+    typeof window !== "undefined" ? window.location.origin : "https://mob.tennis";
+  // Share URL points at the dedicated /share landing page so social
+  // unfurl crawlers hit a route with the right og:image meta. The
+  // landing page nudges the friend toward the same set.
+  const shareParams = new URLSearchParams({
+    set: String(setId),
+    score: String(summary.total_points),
+    max: String(max_possible),
+    pattern: patternCode,
+  });
+  const shareUrl = `${origin}/play/spot-the-ball/share?${shareParams}`;
   const text =
     `🎾 mob.tennis · ${summary.total_points}/${max_possible}\n` +
     `${pattern}\n` +
