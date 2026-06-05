@@ -311,6 +311,9 @@ function RoundSummaryView({
         </h1>
       </header>
 
+      <ShareCard summary={summary} setId={summary.set_id} />
+
+
       <ul className="divide-y divide-ink-700 overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
         {summary.results.map((r) => {
           const img = images.find((i) => i.id === r.image_id);
@@ -450,6 +453,87 @@ function ResultPanel({ distance_pct }: { distance_pct: number }) {
       <div className="mt-1 text-xs uppercase tracking-wider opacity-80">
         {distance_pct.toFixed(1)}% off · {points} pts
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * Wordle-style share card. Renders a preview of the shareable text
+ * (emoji pattern + score + URL) plus a Share button that uses the
+ * native share sheet on mobile and copies-to-clipboard on desktop.
+ *
+ * Text format:
+ *   🎾 mob.tennis · 287/500
+ *   🟩 🟨 🟥 🟩 🟨
+ *   mob.tennis/play/spot-the-ball/sets/123
+ *
+ * Squares: 🟩 perfect (≤3%), 🟨 close (3-7%), 🟥 miss (>7%).
+ * Visible preview lets the user verify what they're about to post
+ * before they hit share.
+ */
+function ShareCard({
+  summary,
+  setId,
+}: {
+  summary: RoundSummary;
+  setId: number;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const max_possible = summary.results.length * 100;
+  const pattern = summary.results
+    .map((r) => (r.band === "perfect" ? "🟩" : r.band === "close" ? "🟨" : "🟥"))
+    .join("");
+  const shareUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/play/spot-the-ball/sets/${setId}`
+      : `https://mob.tennis/play/spot-the-ball/sets/${setId}`;
+  const text =
+    `🎾 mob.tennis · ${summary.total_points}/${max_possible}\n` +
+    `${pattern}\n` +
+    shareUrl;
+
+  const onShare = async () => {
+    // Native share on iOS/Android; falls back to clipboard if no API
+    // or if the user cancels.
+    if (typeof navigator !== "undefined" && "share" in navigator) {
+      try {
+        await navigator.share({
+          title: "Spot the Ball",
+          text,
+        });
+        return;
+      } catch {
+        /* user cancelled or unsupported — fall through to clipboard */
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable; the visible preview is the fallback */
+    }
+  };
+
+  return (
+    <div className="rounded-md border border-ink-700 bg-ink-900 p-4 space-y-3">
+      <div className="space-y-1">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+          Share your round
+        </div>
+        <pre className="text-base leading-relaxed text-text-primary whitespace-pre-wrap font-sans">
+          {text}
+        </pre>
+      </div>
+      <button
+        type="button"
+        onClick={onShare}
+        className="w-full rounded-md border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-bold text-accent hover:bg-accent/20"
+      >
+        {copied ? "Copied to clipboard ✓" : "Share"}
+      </button>
     </div>
   );
 }
