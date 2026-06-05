@@ -431,6 +431,11 @@ export type SpotTheBallArchiveItem = {
   image_url: string;
 };
 
+export type SpotTheBallRound = {
+  seed: string;
+  puzzles: SpotTheBallPuzzle[];
+};
+
 export type DigestDetail = DigestSummary & {
   body_md: string;
   model_name: string;

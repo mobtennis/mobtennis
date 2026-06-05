@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.db.session import get_session
@@ -104,6 +105,43 @@ def archive(
         )
         for r in rows
     ]
+
+
+class RoundResponse(BaseModel):
+    """Daily 5-puzzle round. Same `seed` produces the same 5 puzzles
+    for every player — daily mode is keyed by today's UTC date so
+    everyone shares the same set on a given day. Endless mode uses
+    "endless:N" seeds for N=1,2,3,... to advance after the daily 5
+    are done."""
+    seed: str
+    puzzles: list[SpotTheBallPuzzleView]
+
+
+@router.get("/round", response_model=RoundResponse)
+def daily_round(
+    seed: str | None = Query(None, description="Optional seed override; default = today's UTC date"),
+    session: Session = Depends(get_session),
+):
+    """5 puzzles for today's round, deterministically selected. Same
+    seed → same 5 puzzles → players can compare scores.
+
+    Falls back to fewer than 5 if the published pool is smaller.
+    """
+    import random
+    rng_seed = seed or date.today().isoformat()
+    rows = session.exec(
+        select(SpotTheBallPuzzle)
+        .where(*_calibrated_filter())
+        .order_by(SpotTheBallPuzzle.id.asc())  # stable input order
+    ).all()
+    if not rows:
+        raise HTTPException(404, "No puzzles available yet")
+    if len(rows) <= 5:
+        chosen = rows
+    else:
+        rng = random.Random(rng_seed)
+        chosen = rng.sample(rows, 5)
+    return RoundResponse(seed=rng_seed, puzzles=[_view(r) for r in chosen])
 
 
 @router.get("/{puzzle_date}", response_model=SpotTheBallPuzzleView)
