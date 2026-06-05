@@ -408,12 +408,12 @@ export type NewsSource = {
   source: string;
 };
 
-export type SpotTheBallPuzzle = {
-  puzzle_date: string;   // ISO YYYY-MM-DD
+/** One image in a Spot the Ball set. */
+export type SpotTheBallImage = {
+  id: number;
+  position: number | null;
   image_url: string;
-  /** Pre-inpaint photo with the ball still visible — shown on reveal
-   *  for the "ahh, THERE it was" moment. Null on early-seeded rows;
-   *  reveal falls back to the inpainted image. */
+  /** Pre-inpaint photo with the ball still visible — shown on reveal. */
   original_image_url: string | null;
   image_w: number | null;
   image_h: number | null;
@@ -425,15 +425,20 @@ export type SpotTheBallPuzzle = {
   source_url: string | null;
 };
 
-export type SpotTheBallArchiveItem = {
-  puzzle_date: string;
-  caption: string;
-  image_url: string;
+/** A daily set — 5 images bundled together. */
+export type SpotTheBallSet = {
+  id: number;
+  title: string | null;
+  publish_date: string;     // YYYY-MM-DD
+  images: SpotTheBallImage[];
 };
 
-export type SpotTheBallRound = {
-  seed: string;
-  puzzles: SpotTheBallPuzzle[];
+export type SpotTheBallSetArchiveItem = {
+  id: number;
+  title: string | null;
+  publish_date: string;
+  image_count: number;
+  cover_image_url: string;
 };
 
 export type DigestDetail = DigestSummary & {

@@ -7,7 +7,11 @@ from app.models.player import Player, Tour
 from app.models.player_image import PlayerImage
 from app.models.push_token import PushToken
 from app.models.ranking import Ranking
-from app.models.spot_the_ball import SpotTheBallPuzzle, SpotTheBallSkip
+from app.models.spot_the_ball import (
+    SpotTheBallImage,
+    SpotTheBallSet,
+    SpotTheBallSkip,
+)
 from app.models.tournament import Tournament, TournamentCategory
 from app.models.video import VideoItem
 
@@ -23,7 +27,8 @@ __all__ = [
     "PlayerImage",
     "PushToken",
     "Ranking",
-    "SpotTheBallPuzzle",
+    "SpotTheBallImage",
+    "SpotTheBallSet",
     "SpotTheBallSkip",
     "Surface",
     "Tour",

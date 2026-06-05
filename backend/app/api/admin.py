@@ -30,14 +30,17 @@ from app.db.session import get_session
 from app.models.digest import EditorialDigest
 from app.models.player import Player
 from app.models.player_image import PlayerImage
-from app.models.spot_the_ball import SpotTheBallPuzzle, SpotTheBallSkip
+from app.models.spot_the_ball import SpotTheBallImage, SpotTheBallSet, SpotTheBallSkip
 from app.schemas.digest import CampaignBrief, CampaignBriefsResponse
 from app.schemas.player import PlayerImageView
 from app.schemas.spot_the_ball import (
     CandidateStats,
     CandidateView,
+    QueueImageItem,
+    QueueResponse,
     ScheduleResponse,
-    SpotTheBallPuzzleView,
+    SpotTheBallImageView,
+    SpotTheBallSetView,
 )
 from app.services.editorial_digest import generate_digest
 from app.services.players_image_enrich import _sync_primary_pointer
@@ -282,132 +285,40 @@ def set_player_image_hidden(
     )
 
 
-# ---------------------------------------------------------------------------
-# Spot-the-Ball calibration
-# ---------------------------------------------------------------------------
-
-
-class CalibrateBallBody(BaseModel):
-    """Ball position in image-space as percentages (0-100). Match the
-    storage shape on the row so the field is stable at any display
-    size."""
-    ball_x_pct: float
-    ball_y_pct: float
-
-
-@router.post(
-    "/spot-the-ball/{puzzle_date}/ball",
-    response_model=SpotTheBallPuzzleView,
-    dependencies=[Depends(_require_admin_key)],
-)
-def calibrate_ball(
-    puzzle_date: date,
-    body: CalibrateBallBody,
-    session: Session = Depends(get_session),
-):
-    """Set the true ball coordinates for a seeded puzzle. The play
-    page exposes a calibration mode (`?calibrate=ADMIN_KEY`) that
-    POSTs here when an operator clicks on the actual ball; bypasses
-    needing to edit JSON / inspect images in a separate tool."""
-    row = session.exec(
-        select(SpotTheBallPuzzle).where(SpotTheBallPuzzle.puzzle_date == puzzle_date)
-    ).first()
-    if not row:
-        raise HTTPException(404, "Puzzle not found")
-    # Clamp to the legal % range — guards against floating-point drift
-    # if the click lands a pixel outside the image rect.
-    row.ball_x_pct = max(0.0, min(100.0, body.ball_x_pct))
-    row.ball_y_pct = max(0.0, min(100.0, body.ball_y_pct))
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return SpotTheBallPuzzleView(
-        puzzle_date=row.puzzle_date,
-        image_url=row.image_url,
-        image_w=row.image_w,
-        image_h=row.image_h,
-        ball_x_pct=row.ball_x_pct,
-        ball_y_pct=row.ball_y_pct,
-        caption=row.caption,
-        credit=row.credit,
-        license_url=row.license_url,
-        source_url=row.source_url,
-    )
-
 
 # ---------------------------------------------------------------------------
-# Spot-the-Ball admin builder — content pipeline
+# Spot-the-Ball admin — builder, queue, bundling, calibration, inpaint review
 # ---------------------------------------------------------------------------
 
 
-def _next_scheduled_date(session: Session) -> date:
-    """The day after the latest existing puzzle, or today if none exist
-    yet. Admin builds a queue of future puzzles by scheduling
-    consecutively; cron promotion happens automatically as dates land."""
-    from datetime import timedelta
-    last = session.exec(
-        select(SpotTheBallPuzzle.puzzle_date)
-        .order_by(SpotTheBallPuzzle.puzzle_date.desc())
-        .limit(1)
-    ).first()
-    today = date.today()
-    if not last:
-        return today
-    return max(last + timedelta(days=1), today + timedelta(days=1))
+# Suggested caption is just the player name for now. Operator can pass
+# a `caption` override on the schedule body if they want themed copy.
 
 
-def _commons_file_page_url(upload_url: str) -> str | None:
-    """Derive the Commons File: page URL from an upload.wikimedia.org
-    URL so the puzzle's source_url links back to the original page
-    with full provenance + licence details."""
-    # https://upload.wikimedia.org/wikipedia/commons/[thumb/]X/YZ/Filename.ext[/...]
+def _next_candidate_for_builder(session: Session) -> CandidateView | None:
+    """Find the next PlayerImage to offer the admin builder. Filters
+    by ranking + hero-eligibility, excludes already-used and skipped
+    images. Orders newest-first by year-in-filename (so the operator
+    sees current photos before old ones)."""
     import re
-    from urllib.parse import quote
-    m = re.match(
-        r"https://upload\.wikimedia\.org/wikipedia/commons/(?:thumb/)?[0-9a-f]/[0-9a-f]{2}/([^/?#]+)",
-        upload_url,
-    )
-    if not m:
-        return None
-    filename = m.group(1)
-    return f"https://commons.wikimedia.org/wiki/File:{quote(filename)}"
 
+    _YEAR_RE = re.compile(r"(?<!\d)(19[89]\d|20[0-2]\d)(?!\d)")
 
-import re
+    def _photo_year(url: str) -> int:
+        years = _YEAR_RE.findall(url or "")
+        return max((int(y) for y in years), default=0)
 
-# Require non-digit boundaries on both sides so a 4-digit run embedded
-# in a longer numeric ID (e.g. Flickr's "49745020396" → "2039") doesn't
-# match. Year range capped at 2029 — anything later is almost
-# certainly an ID artifact for now.
-_YEAR_IN_URL = re.compile(r"(?<!\d)(19[89]\d|20[0-2]\d)(?!\d)")
+    used_ids: set[int] = set()
+    for r in session.exec(
+        select(SpotTheBallImage.source_player_image_id).where(
+            SpotTheBallImage.source_player_image_id.is_not(None),
+        )
+    ).all():
+        if r is not None:
+            used_ids.add(r)
+    skipped_ids = set(session.exec(select(SpotTheBallSkip.player_image_id)).all())
+    exclude = used_ids | skipped_ids
 
-
-def _photo_year(url: str) -> int:
-    """Pull the latest 4-digit year (1980-2029) from a Commons
-    filename. Wikipedia photo filenames reliably include the event
-    year — e.g. "Aryna Sabalenka at 2025 Miami Open 04" — and we
-    use that to surface recent photos before stale ones."""
-    years = _YEAR_IN_URL.findall(url or "")
-    return max((int(y) for y in years), default=0)
-
-
-def _player_query_candidate(
-    session: Session, exclude_image_ids: set[int],
-) -> tuple[PlayerImage, Player] | None:
-    """Find the next PlayerImage to offer the admin. Criteria:
-
-      * Player has a ranking signal (current_rank known OR career_high
-        ≤ 300) — filters out the long tail of obscure rows from
-        our lazy enrichment.
-      * Image is hero-eligible (landscape, ≥1000px wide) — action
-        shots, not portraits. Tennis players holding a racket.
-      * Image isn't already used in a puzzle AND hasn't been skipped.
-      * Image isn't hidden.
-
-    Ordered by photo year (newest first), parsed from the Commons
-    filename. Falls back to image id for tie-breaking so the order
-    is deterministic — same image surfaces on a re-open.
-    """
     stmt = (
         select(PlayerImage, Player)
         .join(Player, Player.id == PlayerImage.player_id)
@@ -417,42 +328,19 @@ def _player_query_candidate(
             (Player.current_rank.is_not(None)) | (Player.career_high_rank <= 300),
         )
     )
-    if exclude_image_ids:
-        stmt = stmt.where(PlayerImage.id.notin_(exclude_image_ids))
+    if exclude:
+        stmt = stmt.where(PlayerImage.id.notin_(exclude))
     rows = session.exec(stmt).all()
     if not rows:
         return None
-    # Sort in Python — SQLite has no portable regex extract for
-    # year-in-URL, and we'd lose much by trying to bake it into SQL.
-    # ~1k rows is cheap to sort per request.
-    rows.sort(
-        key=lambda t: (-_photo_year(t[0].url), -t[0].id),
-    )
-    return rows[0]
-
-
-def _excluded_image_ids(session: Session) -> set[int]:
-    # SQLModel returns scalars (not 1-tuples) when the select picks a
-    # single column, so iterate as plain ints.
-    used = {
-        r for r in session.exec(
-            select(SpotTheBallPuzzle.player_image_id)
-            .where(SpotTheBallPuzzle.player_image_id.is_not(None))
-        ).all()
-        if r is not None
-    }
-    skipped = set(session.exec(select(SpotTheBallSkip.player_image_id)).all())
-    return used | skipped
-
-
-def _candidate_view(img: PlayerImage, player: Player) -> CandidateView:
-    name = player.full_name or ""
+    rows.sort(key=lambda t: (-_photo_year(t[0].url), -t[0].id))
+    img, player = rows[0]
     return CandidateView(
         player_image_id=img.id,
         image_url=img.url,
         player_slug=player.slug,
-        player_name=name,
-        suggested_caption=name,
+        player_name=player.full_name or "",
+        suggested_caption=player.full_name or "",
         credit=img.credit,
         license_url=img.license_url,
         source_url=_commons_file_page_url(img.url),
@@ -461,9 +349,31 @@ def _candidate_view(img: PlayerImage, player: Player) -> CandidateView:
     )
 
 
+def _commons_file_page_url(upload_url: str) -> str | None:
+    """Derive the Commons File: page URL from the upload URL."""
+    import re
+    from urllib.parse import quote
+    m = re.match(
+        r"https://upload\.wikimedia\.org/wikipedia/commons/(?:thumb/)?[0-9a-f]/[0-9a-f]{2}/([^/?#]+)",
+        upload_url,
+    )
+    if not m:
+        return None
+    return f"https://commons.wikimedia.org/wiki/File:{quote(m.group(1))}"
+
+
 def _candidate_stats(session: Session) -> CandidateStats:
-    excluded = _excluded_image_ids(session)
-    total_eligible = session.exec(
+    used_ids: set[int] = set()
+    for r in session.exec(
+        select(SpotTheBallImage.source_player_image_id).where(
+            SpotTheBallImage.source_player_image_id.is_not(None),
+        )
+    ).all():
+        if r is not None:
+            used_ids.add(r)
+    skipped_ids = set(session.exec(select(SpotTheBallSkip.player_image_id)).all())
+    excluded = used_ids | skipped_ids
+    eligible_ids = set(session.exec(
         select(PlayerImage.id)
         .join(Player, Player.id == PlayerImage.player_id)
         .where(
@@ -471,32 +381,23 @@ def _candidate_stats(session: Session) -> CandidateStats:
             PlayerImage.is_hidden == False,        # noqa: E712
             (Player.current_rank.is_not(None)) | (Player.career_high_rank <= 300),
         )
-    ).all()
-    remaining = len([i for i in total_eligible if i not in excluded])
-    queued = len(session.exec(
-        select(SpotTheBallPuzzle.id)
-        .where(SpotTheBallPuzzle.is_published == False)  # noqa: E712
-        .where(SpotTheBallPuzzle.ball_x_pct.is_not(None))
     ).all())
-    published = len(session.exec(
-        select(SpotTheBallPuzzle.id)
-        .where(SpotTheBallPuzzle.is_published == True)  # noqa: E712
+    remaining = len(eligible_ids - excluded)
+    pool = len(session.exec(
+        select(SpotTheBallImage.id)
+        .where(SpotTheBallImage.set_id.is_(None))
     ).all())
-    skipped = len(session.exec(select(SpotTheBallSkip.id).distinct()).all())
+    sets_published = len(session.exec(
+        select(SpotTheBallSet.id)
+        .where(SpotTheBallSet.is_published == True)  # noqa: E712
+    ).all())
+    skipped = len(skipped_ids)
     return CandidateStats(
         candidates_remaining=remaining,
-        queued=queued,
-        published=published,
+        pool=pool,
+        sets_published=sets_published,
         skipped=skipped,
     )
-
-
-def _fetch_next_candidate(session: Session) -> CandidateView | None:
-    found = _player_query_candidate(session, _excluded_image_ids(session))
-    if not found:
-        return None
-    img, player = found
-    return _candidate_view(img, player)
 
 
 @router.get(
@@ -504,10 +405,8 @@ def _fetch_next_candidate(session: Session) -> CandidateView | None:
     dependencies=[Depends(_require_admin_key)],
 )
 def builder_next_candidate(session: Session = Depends(get_session)):
-    """Returns the next candidate + a stats snapshot. Used on initial
-    page load and re-fetched after each skip/schedule action."""
     return {
-        "candidate": _fetch_next_candidate(session),
+        "candidate": _next_candidate_for_builder(session),
         "stats": _candidate_stats(session),
     }
 
@@ -521,7 +420,6 @@ class SkipBody(BaseModel):
     dependencies=[Depends(_require_admin_key)],
 )
 def builder_skip(body: SkipBody, session: Session = Depends(get_session)):
-    """Drop this image from the candidate pool permanently."""
     existing = session.exec(
         select(SpotTheBallSkip).where(
             SpotTheBallSkip.player_image_id == body.player_image_id,
@@ -531,159 +429,16 @@ def builder_skip(body: SkipBody, session: Session = Depends(get_session)):
         session.add(SpotTheBallSkip(player_image_id=body.player_image_id))
         session.commit()
     return {
-        "candidate": _fetch_next_candidate(session),
+        "candidate": _next_candidate_for_builder(session),
         "stats": _candidate_stats(session),
     }
-
-
-class QueueItem(BaseModel):
-    """One row in the admin queue listing. Lighter than the public
-    puzzle view because the list page renders dozens at once."""
-    puzzle_date: date
-    caption: str
-    image_url: str           # current (post-Replicate when published)
-    original_image_url: str | None
-    is_published: bool
-    ball_x_pct: float | None
-    ball_y_pct: float | None
-
-
-@router.post(
-    "/spot-the-ball/by-date/{puzzle_date}/remove",
-    dependencies=[Depends(_require_admin_key)],
-)
-def admin_remove_puzzle(
-    puzzle_date: date,
-    session: Session = Depends(get_session),
-):
-    """Unschedule a previously-selected puzzle and put its source
-    image on the skip list so it doesn't bubble back into the
-    candidate pool. Used when the operator changes their mind about
-    a photo they already calibrated.
-
-    The schedule date frees up for a future puzzle automatically
-    because next-date selection looks at max(puzzle_date) across
-    remaining rows.
-    """
-    row = session.exec(
-        select(SpotTheBallPuzzle).where(SpotTheBallPuzzle.puzzle_date == puzzle_date)
-    ).first()
-    if not row:
-        raise HTTPException(404, "Puzzle not found")
-    # Pin the source image to the skip list (if we know it) so the
-    # builder doesn't show this same photo again. Hand-seeded rows
-    # have no player_image_id and just get deleted without a skip.
-    if row.player_image_id is not None:
-        existing = session.exec(
-            select(SpotTheBallSkip).where(
-                SpotTheBallSkip.player_image_id == row.player_image_id,
-            )
-        ).first()
-        if not existing:
-            session.add(SpotTheBallSkip(player_image_id=row.player_image_id))
-    session.delete(row)
-    session.commit()
-    return {"removed": str(puzzle_date)}
-
-
-@router.get(
-    "/spot-the-ball/by-date/{puzzle_date}",
-    response_model=SpotTheBallPuzzleView,
-    dependencies=[Depends(_require_admin_key)],
-)
-def admin_get_puzzle(
-    puzzle_date: date,
-    session: Session = Depends(get_session),
-):
-    """Admin-only fetch of a single puzzle by date. Bypasses the
-    is_published gate the public endpoint applies, so the calibrate
-    flow can edit queued puzzles before they go live."""
-    row = session.exec(
-        select(SpotTheBallPuzzle).where(SpotTheBallPuzzle.puzzle_date == puzzle_date)
-    ).first()
-    if not row:
-        raise HTTPException(404, "Puzzle not found")
-    return SpotTheBallPuzzleView(
-        puzzle_date=row.puzzle_date,
-        image_url=row.image_url,
-        original_image_url=row.original_image_url,
-        image_w=row.image_w,
-        image_h=row.image_h,
-        ball_x_pct=row.ball_x_pct or 50.0,
-        ball_y_pct=row.ball_y_pct or 50.0,
-        caption=row.caption,
-        credit=row.credit,
-        license_url=row.license_url,
-        source_url=row.source_url,
-    )
-
-
-@router.get(
-    "/spot-the-ball/all",
-    response_model=list[QueueItem],
-    dependencies=[Depends(_require_admin_key)],
-)
-def builder_all(session: Session = Depends(get_session)):
-    """Every puzzle the admin has ever touched, newest first. Drives
-    the queue/verification page — shows scheduled-but-not-processed
-    alongside already-published ones, with the status badge so the
-    operator knows where each one stands."""
-    rows = session.exec(
-        select(SpotTheBallPuzzle)
-        .where(SpotTheBallPuzzle.ball_x_pct.is_not(None))
-        .order_by(SpotTheBallPuzzle.puzzle_date.desc())
-    ).all()
-    return [
-        QueueItem(
-            puzzle_date=r.puzzle_date,
-            caption=r.caption,
-            image_url=r.image_url,
-            original_image_url=r.original_image_url,
-            is_published=r.is_published,
-            ball_x_pct=r.ball_x_pct,
-            ball_y_pct=r.ball_y_pct,
-        )
-        for r in rows
-    ]
-
-
-@router.get(
-    "/spot-the-ball/queue",
-    response_model=list[SpotTheBallPuzzleView],
-    dependencies=[Depends(_require_admin_key)],
-)
-def builder_queue(session: Session = Depends(get_session)):
-    """Scheduled-but-not-yet-processed puzzles. The local Replicate
-    processor reads this to know which rows need inpainting."""
-    rows = session.exec(
-        select(SpotTheBallPuzzle)
-        .where(SpotTheBallPuzzle.is_published == False)  # noqa: E712
-        .where(SpotTheBallPuzzle.ball_x_pct.is_not(None))
-        .order_by(SpotTheBallPuzzle.puzzle_date.asc())
-    ).all()
-    return [
-        SpotTheBallPuzzleView(
-            puzzle_date=r.puzzle_date,
-            image_url=r.image_url,
-            original_image_url=r.original_image_url,
-            image_w=r.image_w,
-            image_h=r.image_h,
-            ball_x_pct=r.ball_x_pct or 50.0,
-            ball_y_pct=r.ball_y_pct or 50.0,
-            caption=r.caption,
-            credit=r.credit,
-            license_url=r.license_url,
-            source_url=r.source_url,
-        )
-        for r in rows
-    ]
 
 
 class ScheduleBody(BaseModel):
     player_image_id: int
     ball_x_pct: float
     ball_y_pct: float
-    caption: str | None = None  # admin override; default = suggested
+    caption: str | None = None
 
 
 @router.post(
@@ -695,10 +450,8 @@ def builder_schedule(
     body: ScheduleBody,
     session: Session = Depends(get_session),
 ):
-    """Schedule this image as a future puzzle. The row enters the
-    queue with is_published=False — invisible to the public until the
-    local Replicate processor runs and flips it.
-    """
+    """Calibrate an image — it joins the pool (no set yet). The
+    bundler picks it up later when 5 distinct players are available."""
     img = session.exec(
         select(PlayerImage).where(PlayerImage.id == body.player_image_id)
     ).first()
@@ -710,14 +463,11 @@ def builder_schedule(
     if not player:
         raise HTTPException(404, "Player not found")
 
-    scheduled_date = _next_scheduled_date(session)
     caption = body.caption or player.full_name or "Spot the ball"
-
-    row = SpotTheBallPuzzle(
-        puzzle_date=scheduled_date,
-        # Until the processor runs, image_url is the Wikimedia source
-        # (public won't see this because is_published gates access).
-        image_url=img.url,
+    new = SpotTheBallImage(
+        set_id=None,                              # pool — bundler will assign
+        position=None,
+        image_url=img.url,                        # Wikimedia URL until inpainted
         original_image_url=img.url,
         image_w=img.width,
         image_h=img.height,
@@ -727,13 +477,230 @@ def builder_schedule(
         credit=img.credit,
         license_url=img.license_url,
         source_url=_commons_file_page_url(img.url),
-        player_image_id=img.id,
-        is_published=False,
+        source_player_image_id=img.id,
+        is_inpainted=False,
     )
-    session.add(row)
+    session.add(new)
     session.commit()
+    session.refresh(new)
     return ScheduleResponse(
-        scheduled_date=scheduled_date,
-        next_candidate=_fetch_next_candidate(session),
+        image_id=new.id,
+        next_candidate=_next_candidate_for_builder(session),
         stats=_candidate_stats(session),
     )
+
+
+@router.post(
+    "/spot-the-ball/bundle",
+    dependencies=[Depends(_require_admin_key)],
+)
+def trigger_bundle(session: Session = Depends(get_session)):
+    """Run the bundler: forms as many sets-of-5 from the pool as
+    variety allows. Idempotent — call any time."""
+    from app.services.spot_the_ball_bundler import bundle_pool
+    sets = bundle_pool(session)
+    return {"sets_created": len(sets), "set_ids": [s.id for s in sets]}
+
+
+@router.get(
+    "/spot-the-ball/queue",
+    response_model=QueueResponse,
+    dependencies=[Depends(_require_admin_key)],
+)
+def admin_queue(session: Session = Depends(get_session)):
+    """Pool (images awaiting bundling) + published sets newest first.
+    Triggers an opportunistic bundle pass on each request so the queue
+    is always fresh after a calibration session."""
+    from app.services.spot_the_ball_bundler import bundle_pool
+
+    # Opportunistic bundle — cheap when pool is small.
+    bundle_pool(session)
+
+    pool_images = session.exec(
+        select(SpotTheBallImage)
+        .where(SpotTheBallImage.set_id.is_(None))
+        .order_by(SpotTheBallImage.id.asc())
+    ).all()
+    sets = session.exec(
+        select(SpotTheBallSet)
+        .order_by(SpotTheBallSet.publish_date.desc())
+    ).all()
+
+    return QueueResponse(
+        pool=[
+            QueueImageItem(
+                id=i.id,
+                set_id=i.set_id,
+                position=i.position,
+                image_url=i.image_url,
+                original_image_url=i.original_image_url,
+                caption=i.caption,
+                is_inpainted=i.is_inpainted,
+                inpaint_attempts=i.inpaint_attempts,
+                inpaint_rejected_at=i.inpaint_rejected_at.isoformat() if i.inpaint_rejected_at else None,
+                ball_x_pct=i.ball_x_pct,
+                ball_y_pct=i.ball_y_pct,
+            )
+            for i in pool_images
+        ],
+        sets=[
+            SpotTheBallSetView(
+                id=s.id,
+                title=s.title,
+                publish_date=s.publish_date,
+                images=[
+                    SpotTheBallImageView(
+                        id=i.id,
+                        position=i.position,
+                        image_url=i.image_url,
+                        original_image_url=i.original_image_url,
+                        image_w=i.image_w,
+                        image_h=i.image_h,
+                        ball_x_pct=i.ball_x_pct,
+                        ball_y_pct=i.ball_y_pct,
+                        caption=i.caption,
+                        credit=i.credit,
+                        license_url=i.license_url,
+                        source_url=i.source_url,
+                    )
+                    for i in session.exec(
+                        select(SpotTheBallImage)
+                        .where(SpotTheBallImage.set_id == s.id)
+                        .order_by(SpotTheBallImage.position.asc())
+                    ).all()
+                ],
+            )
+            for s in sets
+        ],
+    )
+
+
+@router.get(
+    "/spot-the-ball/images/{image_id}",
+    response_model=SpotTheBallImageView,
+    dependencies=[Depends(_require_admin_key)],
+)
+def admin_get_image(
+    image_id: int,
+    session: Session = Depends(get_session),
+):
+    """Fetch a single SpotTheBallImage (any state) for the
+    calibrate/inspect view."""
+    img = session.exec(
+        select(SpotTheBallImage).where(SpotTheBallImage.id == image_id)
+    ).first()
+    if not img:
+        raise HTTPException(404, "Image not found")
+    return SpotTheBallImageView(
+        id=img.id,
+        position=img.position,
+        image_url=img.image_url,
+        original_image_url=img.original_image_url,
+        image_w=img.image_w,
+        image_h=img.image_h,
+        ball_x_pct=img.ball_x_pct,
+        ball_y_pct=img.ball_y_pct,
+        caption=img.caption,
+        credit=img.credit,
+        license_url=img.license_url,
+        source_url=img.source_url,
+    )
+
+
+class CalibrateBody(BaseModel):
+    ball_x_pct: float
+    ball_y_pct: float
+
+
+@router.post(
+    "/spot-the-ball/images/{image_id}/calibrate",
+    response_model=SpotTheBallImageView,
+    dependencies=[Depends(_require_admin_key)],
+)
+def admin_calibrate(
+    image_id: int,
+    body: CalibrateBody,
+    session: Session = Depends(get_session),
+):
+    """Adjust the ball position on a previously-calibrated image. If
+    the image was already inpainted, mark it for re-inpaint by
+    clearing is_inpainted (admin needs to run the processor again)."""
+    img = session.exec(
+        select(SpotTheBallImage).where(SpotTheBallImage.id == image_id)
+    ).first()
+    if not img:
+        raise HTTPException(404, "Image not found")
+    img.ball_x_pct = max(0.0, min(100.0, body.ball_x_pct))
+    img.ball_y_pct = max(0.0, min(100.0, body.ball_y_pct))
+    # Ball moved → existing inpaint is wrong; revert to source so the
+    # processor re-runs.
+    if img.is_inpainted:
+        img.is_inpainted = False
+        if img.original_image_url:
+            img.image_url = img.original_image_url
+    session.add(img)
+    session.commit()
+    session.refresh(img)
+    return SpotTheBallImageView(
+        id=img.id, position=img.position,
+        image_url=img.image_url, original_image_url=img.original_image_url,
+        image_w=img.image_w, image_h=img.image_h,
+        ball_x_pct=img.ball_x_pct, ball_y_pct=img.ball_y_pct,
+        caption=img.caption, credit=img.credit,
+        license_url=img.license_url, source_url=img.source_url,
+    )
+
+
+@router.post(
+    "/spot-the-ball/images/{image_id}/remove",
+    dependencies=[Depends(_require_admin_key)],
+)
+def admin_remove_image(
+    image_id: int,
+    session: Session = Depends(get_session),
+):
+    """Permanently drop an image. Source PlayerImage joins the skip
+    list so the builder doesn't re-offer it."""
+    img = session.exec(
+        select(SpotTheBallImage).where(SpotTheBallImage.id == image_id)
+    ).first()
+    if not img:
+        raise HTTPException(404, "Image not found")
+    if img.source_player_image_id is not None:
+        existing = session.exec(
+            select(SpotTheBallSkip).where(
+                SpotTheBallSkip.player_image_id == img.source_player_image_id,
+            )
+        ).first()
+        if not existing:
+            session.add(SpotTheBallSkip(player_image_id=img.source_player_image_id))
+    session.delete(img)
+    session.commit()
+    return {"removed": image_id}
+
+
+@router.post(
+    "/spot-the-ball/images/{image_id}/reject-inpaint",
+    dependencies=[Depends(_require_admin_key)],
+)
+def admin_reject_inpaint(
+    image_id: int,
+    session: Session = Depends(get_session),
+):
+    """Flag an inpaint as bad — clear is_inpainted, restore the
+    source URL, increment the attempt count. Next processor run will
+    re-do this image with a larger mask radius (the processor reads
+    inpaint_attempts and bumps mask 20% per attempt)."""
+    from datetime import datetime as _dt
+    img = session.exec(
+        select(SpotTheBallImage).where(SpotTheBallImage.id == image_id)
+    ).first()
+    if not img:
+        raise HTTPException(404, "Image not found")
+    img.is_inpainted = False
+    img.inpaint_rejected_at = _dt.utcnow()
+    if img.original_image_url:
+        img.image_url = img.original_image_url
+    session.add(img)
+    session.commit()
+    return {"rejected": image_id, "inpaint_attempts": img.inpaint_attempts}

@@ -1,19 +1,14 @@
-"""Inpaint the tennis ball out of each Spot the Ball photo.
+"""Run Replicate Flux fill on pool images, save inpainted JPGs to
+web/public/spot-the-ball/, flip is_inpainted=True on each row.
 
-Reads each calibrated puzzle from the prod API, downloads the source
-image, paints over the ball area with a median-sampled background
-color, blurs the edges so the patch blends, saves the edited file
-to web/public/spot-the-ball/{date}.jpg, and updates the prod DB
-row to point at the new URL.
+The bundler (in services/spot_the_ball_bundler.py) groups inpainted
+pool images into sets of 5 at the next admin queue-page view, so
+the queue → process → bundle pipeline runs itself once you push the
+output of this script.
 
-Run AFTER calibration:
-
-    python -m scripts.process_spot_the_ball_images
-
-Re-runnable: each run reprocesses all calibrated puzzles. Cheap
-enough to just iterate (one-time op on small datasets).
-
-Requires Pillow locally + SSH access to prod for the DB update.
+Usage:
+  REPLICATE_API_TOKEN=… ADMIN_KEY=… \
+      python -m scripts.process_spot_the_ball_images
 """
 
 from __future__ import annotations
@@ -22,9 +17,10 @@ import argparse
 import io
 import json
 import logging
-import math
+import os
 import shlex
 import subprocess
+import time
 import urllib.request
 from pathlib import Path
 
@@ -34,50 +30,23 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("process_stb")
 
 API_BASE = "https://api.mob.tennis"
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "web" / "public" / "spot-the-ball"
 
-# Original Wikimedia URLs by puzzle_date. We overwrote image_url with
-# the local path on first-pass processing, so this map lets a re-run
-# pull the pristine source instead of the already-edited copy.
-#
-# Long-term fix would be a separate `original_image_url` column on the
-# row, but a hardcoded map here is fine for the seeded set — when we
-# add new puzzles via the seed script, append to this dict at the
-# same time.
-SOURCE_URLS: dict[str, str] = {
-    "2026-06-04": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Rich%C3%A8l_Hogenkamp_-_Masters_de_Madrid_2015_-_11.jpg/960px-Rich%C3%A8l_Hogenkamp_-_Masters_de_Madrid_2015_-_11.jpg",
-    "2026-06-03": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b6/2017_US_Open_Tennis_-_Qualifying_Rounds_-_Viktoriya_Tomova_%28BUL%29_def._Polona_Hercog_%28SLO%29_%2836916572131%29.jpg/960px-2017_US_Open_Tennis_-_Qualifying_Rounds_-_Viktoriya_Tomova_%28BUL%29_def._Polona_Hercog_%28SLO%29_%2836916572131%29.jpg",
-    "2026-06-02": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Kei_Nishikori_1%2C_Wimbledon_2013_-_Diliff.jpg/960px-Kei_Nishikori_1%2C_Wimbledon_2013_-_Diliff.jpg",
-    "2026-06-01": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Ana_Ivanovi%C4%87_-_Masters_de_Madrid_2015_-_01.jpg/960px-Ana_Ivanovi%C4%87_-_Masters_de_Madrid_2015_-_01.jpg",
-    "2026-05-31": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Javier_Mart%C3%AD_-_Masters_de_Madrid_2015_-_12.jpg/960px-Javier_Mart%C3%AD_-_Masters_de_Madrid_2015_-_12.jpg",
-    "2026-05-30": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/Andreea_Mitu_-_Masters_de_Madrid_2015_-_05.jpg/960px-Andreea_Mitu_-_Masters_de_Madrid_2015_-_05.jpg",
-}
+# Mask radius (px at 960px source width) bumps 20% per attempt so a
+# rejected inpaint gets a fatter mask on retry — gives the model more
+# room to reconstruct the background.
+BASE_MASK_RADIUS_AT_960 = 55
+MASK_RADIUS_GROWTH_PER_ATTEMPT = 0.20
 
-# Ball-area radius in pixels at the canonical 960px image width.
-# Scaled per-image to the actual width. Tennis balls in close shots
-# typically span ~15-25px; we over-paint to ~30px to leave no halo.
-BALL_RADIUS_AT_960 = 32
-
-# Annulus from which we sample background colors. Outer ring (3x
-# the ball radius) captures clean background; inner ring (1.5x)
-# skips the ball + immediate shadow.
-SAMPLE_INNER_FACTOR = 1.5
-SAMPLE_OUTER_FACTOR = 3.0
-
-# Feather radius — Gaussian blur applied to the patched circle so
-# the painted disc bleeds into the surrounding background without
-# a hard edge.
-FEATHER_RADIUS = 8
+# Polite default; Wikimedia rate-limits hard.
+INTER_DOWNLOAD_SLEEP = 1.5
 
 
 def _download(url: str, max_retries: int = 5) -> Image.Image:
-    """Polite GET that honours 429 + Retry-After. Wikimedia's
-    upload.wikimedia.org will rate-limit consecutive same-host
-    requests hard."""
-    import time
     log.info("  downloading %s", url[:80])
-    for attempt in range(max_retries):
+    for attempt in range(max_retries + 1):
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
@@ -96,40 +65,7 @@ def _download(url: str, max_retries: int = 5) -> Image.Image:
     raise RuntimeError(f"giving up on {url}: rate-limited too many times")
 
 
-def _sample_background_color(
-    im: Image.Image, cx: int, cy: int, inner: int, outer: int,
-) -> tuple[int, int, int]:
-    """Median RGB inside the annulus around (cx, cy)."""
-    px = im.load()
-    samples_r: list[int] = []
-    samples_g: list[int] = []
-    samples_b: list[int] = []
-    w, h = im.size
-    inner_sq = inner * inner
-    outer_sq = outer * outer
-    # Walk the bounding box of the outer ring; cheap enough at our sizes.
-    for y in range(max(0, cy - outer), min(h, cy + outer + 1)):
-        for x in range(max(0, cx - outer), min(w, cx + outer + 1)):
-            d = (x - cx) ** 2 + (y - cy) ** 2
-            if d < inner_sq or d > outer_sq:
-                continue
-            r, g, b = px[x, y]
-            samples_r.append(r)
-            samples_g.append(g)
-            samples_b.append(b)
-    if not samples_r:
-        return (128, 128, 128)
-    samples_r.sort(); samples_g.sort(); samples_b.sort()
-    mid = len(samples_r) // 2
-    return (samples_r[mid], samples_g[mid], samples_b[mid])
-
-
 def _surface_hint_from_caption(caption: str) -> str:
-    """Infer surface from the photo caption — Flux fill produces
-    cleaner output when you tell it what should be there. Madrid /
-    Roland Garros / Rome / Monte Carlo are clay; Wimbledon is
-    grass; everything else is hard.
-    """
     c = (caption or "").lower()
     if any(k in c for k in ("madrid", "roland", "french open", "rome", "monte carlo")):
         return "red clay tennis court surface"
@@ -138,37 +74,28 @@ def _surface_hint_from_caption(caption: str) -> str:
     return "blue hard tennis court surface"
 
 
-def _ai_inpaint_ball(
-    im: Image.Image, ball_x_pct: float, ball_y_pct: float, caption: str,
+def _ai_inpaint(
+    im: Image.Image,
+    ball_x_pct: float,
+    ball_y_pct: float,
+    caption: str,
+    mask_radius_factor: float,
 ) -> Image.Image:
-    """Replicate Flux fill — context-aware inpainting that actually
-    reconstructs the background where the ball was, even when the ball
-    overlaps the player's body. Costs ~$0.04 per image.
-
-    Requires REPLICATE_API_TOKEN in env.
-    """
-    import os
+    """Replicate Flux fill with a player-context-aware prompt."""
     import replicate
 
     if not os.environ.get("REPLICATE_API_TOKEN"):
-        raise RuntimeError(
-            "REPLICATE_API_TOKEN not set — export it before --use-ai",
-        )
+        raise RuntimeError("REPLICATE_API_TOKEN not set")
 
     w, h = im.size
     cx = int(round(w * ball_x_pct / 100))
     cy = int(round(h * ball_y_pct / 100))
-    # Mask radius: generous so the model has room to reconstruct
-    # the texture without leaving a halo of original-ball pixels.
-    mask_r = max(30, int(round(55 * w / 960)))
-
+    mask_r = max(30, int(round(BASE_MASK_RADIUS_AT_960 * mask_radius_factor * w / 960)))
     mask = Image.new("L", (w, h), 0)
     ImageDraw.Draw(mask).ellipse(
         [(cx - mask_r, cy - mask_r), (cx + mask_r, cy + mask_r)],
         fill=255,
     )
-    # Light blur on the mask edge so the model blends rather than
-    # producing a sharp boundary.
     mask = mask.filter(ImageFilter.GaussianBlur(radius=4))
 
     img_buf = io.BytesIO()
@@ -183,8 +110,8 @@ def _ai_inpaint_ball(
         f"clean {surface} background, photorealistic, seamless, "
         f"matches the surrounding texture exactly, no objects, no ball"
     )
-    log.info("  replicate flux-fill: mask r=%d at (%d,%d) prompt=%r",
-             mask_r, cx, cy, surface)
+    log.info("  flux-fill: mask r=%d (factor %.2f) at (%d,%d)",
+             mask_r, mask_radius_factor, cx, cy)
 
     output = replicate.run(
         "black-forest-labs/flux-fill-dev",
@@ -198,8 +125,6 @@ def _ai_inpaint_ball(
             "output_quality": 92,
         },
     )
-
-    # SDK returns either a file-like object, a URL string, or a list.
     if isinstance(output, list):
         output = output[0]
     if hasattr(output, "read"):
@@ -210,91 +135,34 @@ def _ai_inpaint_ball(
     return Image.open(io.BytesIO(data)).convert("RGB")
 
 
-def _inpaint_ball(
-    im: Image.Image, ball_x_pct: float, ball_y_pct: float,
-) -> Image.Image:
-    w, h = im.size
-    cx = int(round(w * ball_x_pct / 100.0))
-    cy = int(round(h * ball_y_pct / 100.0))
-    # Scale ball radius proportionally to image width.
-    ball_radius = max(12, int(round(BALL_RADIUS_AT_960 * w / 960)))
-    inner = int(round(ball_radius * SAMPLE_INNER_FACTOR))
-    outer = int(round(ball_radius * SAMPLE_OUTER_FACTOR))
-    bg = _sample_background_color(im, cx, cy, inner, outer)
-    log.info("  ball=(%d,%d) r=%d  sampled bg=%s", cx, cy, ball_radius, bg)
-
-    # Painted disc lives on a temporary RGBA layer so we can blur its
-    # alpha for the feather, then composite. Simpler than blur+restore
-    # tricks; reads cleanly on inspection.
-    overlay = Image.new("RGBA", im.size, (0, 0, 0, 0))
-    od = ImageDraw.Draw(overlay)
-    # Slightly bigger disc than the ball — accounts for cast shadow.
-    paint_r = int(ball_radius * 1.1)
-    od.ellipse(
-        [(cx - paint_r, cy - paint_r), (cx + paint_r, cy + paint_r)],
-        fill=(*bg, 255),
-    )
-    # Feather edges.
-    overlay = overlay.filter(ImageFilter.GaussianBlur(radius=FEATHER_RADIUS))
-    base = im.convert("RGBA")
-    return Image.alpha_composite(base, overlay).convert("RGB")
+def _fetch_pool() -> list[dict]:
+    """Pool images that need inpainting (set_id null, is_inpainted false)."""
+    if not ADMIN_KEY:
+        raise RuntimeError("ADMIN_KEY env var required")
+    with urllib.request.urlopen(
+        f"{API_BASE}/api/admin/spot-the-ball/queue?key={ADMIN_KEY}",
+    ) as r:
+        data = json.load(r)
+    return [p for p in data.get("pool", []) if not p["is_inpainted"]]
 
 
-def _fetch_calibrated_puzzles(queue_only: bool = False) -> list[dict]:
-    """Pull puzzle payloads. By default returns everything in the
-    public archive (published, has been through processing once).
-
-    With queue_only=True, instead returns is_published=False rows
-    via the dedicated admin endpoint — these are the puzzles the
-    builder has scheduled and the processor needs to inpaint.
-    """
-    if queue_only:
-        url = f"{API_BASE}/api/admin/spot-the-ball/queue?key={ADMIN_KEY}"
-        with urllib.request.urlopen(url) as r:
-            return json.load(r)
-    url = f"{API_BASE}/api/spot-the-ball/archive?limit=200"
-    with urllib.request.urlopen(url) as r:
-        archive = json.load(r)
-    out = []
-    for item in archive:
-        with urllib.request.urlopen(
-            f"{API_BASE}/api/spot-the-ball/{item['puzzle_date']}",
-        ) as r:
-            out.append(json.load(r))
-    return out
-
-
-import os
-ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
-
-
-def _prod_update_image_url(
-    puzzle_date: str, new_url: str, original_url: str,
-) -> None:
-    """SSH into prod and patch the row. Sets both:
-
-      * image_url        — the inpainted local URL the puzzle uses
-      * original_image_url — the pristine source we just downloaded
-                             from (used by the reveal swap so players
-                             see the actual ball after their guess)
-
-    Cheap one-shot — keeps the admin API surface narrow.
-    """
+def _prod_update(image_id: int, new_image_url: str) -> None:
+    """SSH into prod: flip is_inpainted=True, update image_url to local,
+    increment inpaint_attempts."""
     py = (
         "from sqlmodel import Session, select; "
         "from app.db.session import engine; "
-        "from app.models.spot_the_ball import SpotTheBallPuzzle; "
-        "from datetime import date; "
-        f"d = date.fromisoformat({puzzle_date!r}); "
-        f"new = {new_url!r}; "
-        f"orig = {original_url!r}; "
+        "from app.models.spot_the_ball import SpotTheBallImage; "
+        f"image_id = {image_id}; "
+        f"new = {new_image_url!r}; "
         "s = Session(engine); "
-        "row = s.exec(select(SpotTheBallPuzzle).where(SpotTheBallPuzzle.puzzle_date == d)).first(); "
-        "row.image_url = new; "
-        "row.original_image_url = orig; "
-        "row.is_published = True; "
-        "s.add(row); s.commit(); "
-        "print(f'updated {d} (image+original, published)')"
+        "img = s.exec(select(SpotTheBallImage).where(SpotTheBallImage.id == image_id)).first(); "
+        "img.image_url = new; "
+        "img.is_inpainted = True; "
+        "img.inpaint_attempts = (img.inpaint_attempts or 0) + 1; "
+        "img.inpaint_rejected_at = None; "
+        "s.add(img); s.commit(); "
+        "print(f'updated {image_id}: inpainted, attempts={img.inpaint_attempts}')"
     )
     cmd = [
         "ssh", "mobtennis-ubuntu",
@@ -307,73 +175,44 @@ def _prod_update_image_url(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--id", type=int, default=None,
+        help="Process a single image by id (default: walk the whole pool).",
+    )
+    parser.add_argument(
         "--public-base", default="https://mob.tennis",
-        help="Public origin where /spot-the-ball/<date>.jpg will be served. "
-             "Vercel serves web/public from the site root.",
-    )
-    parser.add_argument(
-        "--skip-db-update", action="store_true",
-        help="Process images only; don't touch the prod DB.",
-    )
-    parser.add_argument(
-        "--date", default=None,
-        help="Process a single puzzle by ISO date instead of all.",
-    )
-    parser.add_argument(
-        "--use-ai", action="store_true",
-        help="Use Replicate Flux fill instead of the Pillow median-sample "
-             "fallback. Requires REPLICATE_API_TOKEN. ~$0.04 per image.",
-    )
-    parser.add_argument(
-        "--force", action="store_true",
-        help="Reprocess puzzles whose image_url already points at our "
-             "public origin (i.e. previously processed).",
-    )
-    parser.add_argument(
-        "--queue-only", action="store_true",
-        help="Only process the admin builder's queue (is_published=False). "
-             "Requires ADMIN_KEY env var. Use this for the normal new-puzzle "
-             "workflow; bare invocation operates on the full archive.",
+        help="Public origin where /spot-the-ball/{id}.jpg is served.",
     )
     args = parser.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    puzzles = _fetch_calibrated_puzzles(queue_only=args.queue_only)
-    if args.date:
-        puzzles = [p for p in puzzles if p["puzzle_date"] == args.date]
-    log.info("processing %d puzzles", len(puzzles))
+    pool = _fetch_pool()
+    if args.id:
+        pool = [p for p in pool if p["id"] == args.id]
+    log.info("processing %d pool image(s)", len(pool))
 
-    import time
-    for i, p in enumerate(puzzles):
-        d = p["puzzle_date"]
-        log.info("[%s] %s", d, p.get("caption", ""))
-        if not args.force and p["image_url"].startswith(args.public_base):
-            log.info("  already pointing at processed URL; --force to redo")
-            continue
-        # Prefer the hardcoded original source over the row's image_url
-        # because image_url was overwritten with the local path on the
-        # first processing pass.
-        source = SOURCE_URLS.get(d, p["image_url"])
+    for i, p in enumerate(pool):
+        img_id = p["id"]
+        log.info("[image #%d] %s", img_id, p["caption"])
+        source = p["original_image_url"] or p["image_url"]
         if i > 0:
-            # Throttle between source downloads to keep Wikimedia happy.
-            time.sleep(1.5)
+            time.sleep(INTER_DOWNLOAD_SLEEP)
         try:
             im = _download(source)
-            if args.use_ai:
-                edited = _ai_inpaint_ball(
-                    im, p["ball_x_pct"], p["ball_y_pct"], p.get("caption", ""),
-                )
-            else:
-                edited = _inpaint_ball(im, p["ball_x_pct"], p["ball_y_pct"])
+            # Bump mask each retry so a previously-rejected attempt
+            # gets a fatter mask this time.
+            attempt_idx = p.get("inpaint_attempts", 0)
+            factor = 1.0 + attempt_idx * MASK_RADIUS_GROWTH_PER_ATTEMPT
+            edited = _ai_inpaint(
+                im, p["ball_x_pct"], p["ball_y_pct"], p["caption"], factor,
+            )
         except Exception:
-            log.exception("  failed to process %s", d)
+            log.exception("  failed image #%d", img_id)
             continue
-        out_path = OUT_DIR / f"{d}.jpg"
+        out_path = OUT_DIR / f"{img_id}.jpg"
         edited.save(out_path, "JPEG", quality=90)
         log.info("  wrote %s (%d KB)", out_path, out_path.stat().st_size // 1024)
-        if not args.skip_db_update:
-            new_url = f"{args.public_base}/spot-the-ball/{d}.jpg"
-            _prod_update_image_url(d, new_url, source)
+        new_url = f"{args.public_base}/spot-the-ball/{img_id}.jpg"
+        _prod_update(img_id, new_url)
 
 
 if __name__ == "__main__":

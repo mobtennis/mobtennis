@@ -1,12 +1,10 @@
-"""Public endpoints for the Spot the Ball daily game.
+"""Public Spot the Ball endpoints — set-based model.
 
-Three reads, no writes from the public surface:
-  - GET /today           — the puzzle for today (UTC). 404 if none seeded.
-  - GET /archive         — paginated backlog (newest first), without coords.
-  - GET /{date}          — a specific dated puzzle.
-
-Calibration (admin-only, sets ball coords) lives on the admin router
-because it needs the ADMIN_KEY gate.
+  - GET /today          → the set whose publish_date is today (or
+                          the most recent past set if today's is
+                          missing). 404 if no sets exist.
+  - GET /archive        → published sets, newest first.
+  - GET /{set_id}       → a specific set.
 """
 
 from __future__ import annotations
@@ -14,147 +12,125 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.db.session import get_session
-from app.models.spot_the_ball import SpotTheBallPuzzle
-from app.schemas.spot_the_ball import SpotTheBallArchiveItem, SpotTheBallPuzzleView
+from app.models.spot_the_ball import SpotTheBallImage, SpotTheBallSet
+from app.schemas.spot_the_ball import (
+    SpotTheBallImageView,
+    SpotTheBallSetArchiveItem,
+    SpotTheBallSetView,
+)
 
 router = APIRouter(prefix="/api/spot-the-ball", tags=["spot-the-ball"])
 
 
-def _view(row: SpotTheBallPuzzle) -> SpotTheBallPuzzleView:
-    return SpotTheBallPuzzleView(
-        puzzle_date=row.puzzle_date,
-        image_url=row.image_url,
-        original_image_url=row.original_image_url,
-        image_w=row.image_w,
-        image_h=row.image_h,
-        # Public endpoint only returns puzzles with coords calibrated;
-        # _ball_*_pct cannot be null here. `or 50.0` is paranoia.
-        ball_x_pct=row.ball_x_pct or 50.0,
-        ball_y_pct=row.ball_y_pct or 50.0,
-        caption=row.caption,
-        credit=row.credit,
-        license_url=row.license_url,
-        source_url=row.source_url,
-    )
-
-
-def _calibrated_filter():
-    """Puzzles are hidden until: (a) ball coords are calibrated and
-    (b) the Replicate inpaint pipeline has run and flipped them to
-    is_published=True. Filters both lets us queue future puzzles in
-    the DB without exposing rows that still show the ball."""
-    return (
-        SpotTheBallPuzzle.ball_x_pct.is_not(None),
-        SpotTheBallPuzzle.ball_y_pct.is_not(None),
-        SpotTheBallPuzzle.is_published == True,  # noqa: E712
-    )
-
-
-@router.get("/today", response_model=SpotTheBallPuzzleView)
-def todays_puzzle(session: Session = Depends(get_session)):
+def _published_filter():
     today = date.today()
-    row = session.exec(
-        select(SpotTheBallPuzzle)
-        .where(
-            SpotTheBallPuzzle.puzzle_date == today,
-            *_calibrated_filter(),
+    return (
+        SpotTheBallSet.is_published == True,  # noqa: E712
+        SpotTheBallSet.publish_date <= today,
+    )
+
+
+def _set_view(session: Session, s: SpotTheBallSet) -> SpotTheBallSetView:
+    images = session.exec(
+        select(SpotTheBallImage)
+        .where(SpotTheBallImage.set_id == s.id)
+        .order_by(SpotTheBallImage.position.asc())
+    ).all()
+    return SpotTheBallSetView(
+        id=s.id,
+        title=s.title,
+        publish_date=s.publish_date,
+        images=[
+            SpotTheBallImageView(
+                id=i.id,
+                position=i.position,
+                image_url=i.image_url,
+                original_image_url=i.original_image_url,
+                image_w=i.image_w,
+                image_h=i.image_h,
+                ball_x_pct=i.ball_x_pct,
+                ball_y_pct=i.ball_y_pct,
+                caption=i.caption,
+                credit=i.credit,
+                license_url=i.license_url,
+                source_url=i.source_url,
+            )
+            for i in images
+        ],
+    )
+
+
+@router.get("/today", response_model=SpotTheBallSetView)
+def todays_set(session: Session = Depends(get_session)):
+    """The set published for today's date. If today has no scheduled
+    set (rare; bundler ran short), fall back to the most recent past
+    set so the home page isn't a dead-end."""
+    today = date.today()
+    s = session.exec(
+        select(SpotTheBallSet).where(
+            *_published_filter(),
+            SpotTheBallSet.publish_date == today,
         )
     ).first()
-    if not row:
-        # Fallback: most recent calibrated puzzle on or before today.
-        # Means if we ever miss a day, today's visit still lands on
-        # something playable rather than a 404 dead-end.
-        row = session.exec(
-            select(SpotTheBallPuzzle)
-            .where(
-                SpotTheBallPuzzle.puzzle_date <= today,
-                *_calibrated_filter(),
-            )
-            .order_by(SpotTheBallPuzzle.puzzle_date.desc())
+    if not s:
+        s = session.exec(
+            select(SpotTheBallSet)
+            .where(*_published_filter())
+            .order_by(SpotTheBallSet.publish_date.desc())
             .limit(1)
         ).first()
-    if not row:
-        raise HTTPException(404, "No puzzles available yet")
-    return _view(row)
+    if not s:
+        raise HTTPException(404, "No sets available yet")
+    return _set_view(session, s)
 
 
-@router.get("/archive", response_model=list[SpotTheBallArchiveItem])
+@router.get("/archive", response_model=list[SpotTheBallSetArchiveItem])
 def archive(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
 ):
-    """All calibrated puzzles, newest first. The backlog the player
-    catches up on if they discover the game late."""
     rows = session.exec(
-        select(SpotTheBallPuzzle)
-        .where(*_calibrated_filter())
-        .order_by(SpotTheBallPuzzle.puzzle_date.desc())
+        select(SpotTheBallSet)
+        .where(*_published_filter())
+        .order_by(SpotTheBallSet.publish_date.desc())
         .offset(offset)
         .limit(limit)
     ).all()
-    return [
-        SpotTheBallArchiveItem(
-            puzzle_date=r.puzzle_date,
-            caption=r.caption,
-            image_url=r.image_url,
+    out: list[SpotTheBallSetArchiveItem] = []
+    for s in rows:
+        first_image = session.exec(
+            select(SpotTheBallImage)
+            .where(SpotTheBallImage.set_id == s.id)
+            .order_by(SpotTheBallImage.position.asc())
+            .limit(1)
+        ).first()
+        count = len(session.exec(
+            select(SpotTheBallImage.id).where(SpotTheBallImage.set_id == s.id)
+        ).all())
+        out.append(
+            SpotTheBallSetArchiveItem(
+                id=s.id,
+                title=s.title,
+                publish_date=s.publish_date,
+                image_count=count,
+                cover_image_url=first_image.image_url if first_image else "",
+            )
         )
-        for r in rows
-    ]
+    return out
 
 
-class RoundResponse(BaseModel):
-    """Daily 5-puzzle round. Same `seed` produces the same 5 puzzles
-    for every player — daily mode is keyed by today's UTC date so
-    everyone shares the same set on a given day. Endless mode uses
-    "endless:N" seeds for N=1,2,3,... to advance after the daily 5
-    are done."""
-    seed: str
-    puzzles: list[SpotTheBallPuzzleView]
-
-
-@router.get("/round", response_model=RoundResponse)
-def daily_round(
-    seed: str | None = Query(None, description="Optional seed override; default = today's UTC date"),
-    session: Session = Depends(get_session),
-):
-    """5 puzzles for today's round, deterministically selected. Same
-    seed → same 5 puzzles → players can compare scores.
-
-    Falls back to fewer than 5 if the published pool is smaller.
-    """
-    import random
-    rng_seed = seed or date.today().isoformat()
-    rows = session.exec(
-        select(SpotTheBallPuzzle)
-        .where(*_calibrated_filter())
-        .order_by(SpotTheBallPuzzle.id.asc())  # stable input order
-    ).all()
-    if not rows:
-        raise HTTPException(404, "No puzzles available yet")
-    if len(rows) <= 5:
-        chosen = rows
-    else:
-        rng = random.Random(rng_seed)
-        chosen = rng.sample(rows, 5)
-    return RoundResponse(seed=rng_seed, puzzles=[_view(r) for r in chosen])
-
-
-@router.get("/{puzzle_date}", response_model=SpotTheBallPuzzleView)
-def get_puzzle(
-    puzzle_date: date,
-    session: Session = Depends(get_session),
-):
-    row = session.exec(
-        select(SpotTheBallPuzzle).where(
-            SpotTheBallPuzzle.puzzle_date == puzzle_date,
-            *_calibrated_filter(),
+@router.get("/{set_id}", response_model=SpotTheBallSetView)
+def get_set(set_id: int, session: Session = Depends(get_session)):
+    s = session.exec(
+        select(SpotTheBallSet).where(
+            SpotTheBallSet.id == set_id,
+            *_published_filter(),
         )
     ).first()
-    if not row:
-        raise HTTPException(404, "Puzzle not found")
-    return _view(row)
+    if not s:
+        raise HTTPException(404, "Set not found")
+    return _set_view(session, s)

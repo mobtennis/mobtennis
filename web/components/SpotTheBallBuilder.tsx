@@ -38,8 +38,8 @@ type Candidate = {
 
 type Stats = {
   candidates_remaining: number;
-  queued: number;
-  published: number;
+  pool: number;
+  sets_published: number;
   skipped: number;
 };
 
@@ -49,7 +49,7 @@ type NextResponse = {
 };
 
 type ScheduleResponse = {
-  scheduled_date: string;
+  image_id: number;
   next_candidate: Candidate | null;
   stats: Stats;
 };
@@ -134,7 +134,7 @@ export function SpotTheBallBuilder({ adminKey }: { adminKey: string }) {
       );
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const data: ScheduleResponse = await res.json();
-      setLastScheduled(`${data.scheduled_date} · ${candidate.player_name}`);
+      setLastScheduled(`#${data.image_id} · ${candidate.player_name} (in pool)`);
       setCandidate(data.next_candidate);
       setStats(data.stats);
     } catch (e) {
@@ -165,8 +165,8 @@ export function SpotTheBallBuilder({ adminKey }: { adminKey: string }) {
       {stats && (
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           <Stat label="Candidates remaining" value={stats.candidates_remaining} />
-          <Stat label="Queued (need processing)" value={stats.queued} />
-          <Stat label="Published" value={stats.published} />
+          <Stat label="Pool" value={stats.pool} />
+          <Stat label="Sets published" value={stats.sets_published} />
           <Stat label="Skipped" value={stats.skipped} />
         </div>
       )}

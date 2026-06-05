@@ -1,15 +1,30 @@
-"""Daily "Spot the Ball" puzzle — show a tennis action shot with the
-ball removed, ask the user to click where it should be.
+"""Spot the Ball — daily 5-image round.
 
-Inspired by the classic UK newspaper game. Tennis is unusually good
-at it because the ball is small, the racket+body posture telegraphs
-where it has to be, and frozen mid-stroke moments produce clean
-puzzles.
+Schema split into two tables:
 
-Cadence: one puzzle per UTC day (puzzle_date unique). Old puzzles
-stay playable indefinitely so late joiners get a full backlog (the
-enclose.horse pattern). Scores live in client localStorage — no
-account needed for v1; web stays anonymous per the identity policy.
+  SpotTheBallSet     — "one daily puzzle". Contains exactly 5 images
+                       once bundled. Has a publish_date that gates
+                       public visibility.
+  SpotTheBallImage   — one tennis photo with one calibrated ball
+                       position. Lives in a `pool` while set_id is
+                       null; the bundler groups pool images into
+                       sets when 5+ inpainted images exist with
+                       enough player variety.
+
+Bundling rule: no two images in the same set share a player. The
+bundler tolerates a lopsided pool (many photos of one player) by
+forming sets only when 5 distinct players are available; leftovers
+stay in the pool until variety improves.
+
+Local Replicate processing runs on SpotTheBallImage rows: download
+original from Wikimedia, inpaint, save to web/public/spot-the-ball/
+{id}.jpg, flag is_inpainted=True. Sets become public when all 5
+images are inpainted AND the set has is_published=True AND today >=
+publish_date.
+
+SpotTheBallSkip table is unchanged — same semantics, lives on
+PlayerImage IDs so the admin builder doesn't re-offer rejected
+photos.
 """
 
 from datetime import date, datetime
@@ -17,67 +32,84 @@ from datetime import date, datetime
 from sqlmodel import Field, SQLModel
 
 
-class SpotTheBallPuzzle(SQLModel, table=True):
-    __tablename__ = "spot_the_ball_puzzles"
+class SpotTheBallSet(SQLModel, table=True):
+    """One day's puzzle. Bundle of 5 SpotTheBallImage rows."""
+    __tablename__ = "spot_the_ball_sets"
 
     id: int | None = Field(default=None, primary_key=True)
 
-    # When this puzzle is the "daily" — also used as URL slug.
-    puzzle_date: date = Field(index=True, unique=True)
+    # Optional human-readable label — used for themed sets and the
+    # admin queue. Auto-set on bundle (e.g. "Round 7").
+    title: str | None = None
 
-    # Ball-removed image displayed during the puzzle. Local URL once
-    # we've run the Flux-fill inpaint pipeline (web/public/spot-the-
-    # ball/{date}.jpg via /spot-the-ball/{date}.jpg).
+    # Date this set becomes the "today" puzzle. Sets queue up
+    # consecutively; bundler picks the next available date.
+    publish_date: date = Field(index=True, unique=True)
+
+    # Operator can hold a set back from public until they review
+    # the inpaints (true by default since the bundler creates sets
+    # only from already-inpainted images).
+    is_published: bool = Field(default=True, index=True)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class SpotTheBallImage(SQLModel, table=True):
+    """One calibrated photo. In the pool while set_id is null;
+    assigned to a set by the bundler."""
+    __tablename__ = "spot_the_ball_images"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    # Membership in a set. Null = in pool, awaiting bundling.
+    set_id: int | None = Field(
+        default=None, foreign_key="spot_the_ball_sets.id", index=True,
+    )
+    # Position within the set (1..5). Null while in pool.
+    position: int | None = None
+
+    # Image data. image_url is the inpainted public version once
+    # processed; original_image_url is the source on Wikimedia (used
+    # for the reveal swap).
     image_url: str
-
-    # Original photo with the ball still in it. Shown on the reveal
-    # after the user locks in their guess — the "ohhh, THAT's where
-    # it was" moment. Nullable for backwards compatibility with the
-    # earliest seeded rows; the reveal falls back to the inpainted
-    # image with a pin overlay when null.
     original_image_url: str | None = None
-
-    # Native intrinsic dimensions of the image we're showing.
-    # Nullable — the frontend reads `naturalWidth` / `naturalHeight`
-    # from the loaded image element if these aren't seeded, so the
-    # values are an optimisation (avoid layout shift on first paint),
-    # not a correctness requirement.
     image_w: int | None = None
     image_h: int | None = None
 
-    # True ball coordinates expressed as percentages of the image
-    # dimensions (0.0–100.0). Storing as % means coords stay correct
-    # at any rendered display size, including responsive resize on
-    # phones vs desktop. Nullable for puzzles created via the seed
-    # script before calibration — they're hidden from the public
-    # endpoint until coords land.
-    ball_x_pct: float | None = None
-    ball_y_pct: float | None = None
+    # Ball position as percentages of image dimensions.
+    ball_x_pct: float
+    ball_y_pct: float
 
-    # Human-readable caption for the page header — "Kei Nishikori,
-    # Wimbledon 2013" etc.
+    # Display + attribution.
     caption: str
-
-    # Photographer + license short-name, e.g. "Diliff · CC BY-SA 2.0".
-    # Required for the CC-BY family on Commons — rendered under the
-    # photo on the play page.
     credit: str | None = None
     license_url: str | None = None
-    # Wikipedia / Commons page for the original. Linked from the
-    # credit so curious players can see the source.
-    source_url: str | None = None
+    source_url: str | None = None  # Commons file page
 
-    # Link back to the PlayerImage this puzzle was built from when it
-    # came through the admin builder (vs. the v1 hand-seeded set,
-    # which has no PlayerImage origin and leaves this null).
-    player_image_id: int | None = Field(default=None, foreign_key="player_images.id", index=True)
+    # Source provenance — links back to the PlayerImage row this
+    # was built from. Used by the bundler to enforce the no-
+    # duplicate-player constraint and by the rejection/retry loop
+    # to mark sources as do-not-offer-again.
+    source_player_image_id: int | None = Field(
+        default=None, foreign_key="player_images.id", index=True,
+    )
 
-    # Gated by the local Replicate processor: rows enter the queue
-    # with is_published=False (image_url still points at the original
-    # Wikimedia URL — the ball is visible, public must not see it).
-    # Processor downloads, inpaints, writes to web/public, then sets
-    # is_published=True. Public endpoints filter on this flag.
-    is_published: bool = Field(default=False, index=True)
+    # Inpaint lifecycle:
+    #   is_inpainted = False  → image_url is the Wikimedia source
+    #                           (ball still visible — must not go
+    #                           public)
+    #   is_inpainted = True   → image_url has been replaced with
+    #                           the local /spot-the-ball/{id}.jpg
+    #                           by the local Replicate processor.
+    #
+    # Sets only bundle from is_inpainted=True images.
+    is_inpainted: bool = Field(default=False, index=True)
+
+    # Attempt tracking for the reject-and-retry flow. inpaint_attempts
+    # increments on each Replicate run; the processor uses it to bump
+    # the mask radius on retries.
+    inpaint_attempts: int = 0
+    inpaint_rejected_at: datetime | None = None
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -85,9 +117,7 @@ class SpotTheBallPuzzle(SQLModel, table=True):
 
 class SpotTheBallSkip(SQLModel, table=True):
     """Admin skipped this image during the builder workflow — don't
-    show it as a candidate again. Independent of PlayerImage.is_hidden
-    (which has site-wide effects); skipping for Spot the Ball is a
-    purely-game-side decision and doesn't influence other surfaces."""
+    show it as a candidate again."""
     __tablename__ = "spot_the_ball_skips"
 
     id: int | None = Field(default=None, primary_key=True)

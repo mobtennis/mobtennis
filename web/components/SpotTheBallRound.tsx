@@ -2,28 +2,23 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { SpotTheBallPuzzle } from "@/lib/api";
+import type { SpotTheBallImage, SpotTheBallSet } from "@/lib/api";
 
 /**
- * Round-mode play: walk through N puzzles back-to-back, score
- * cumulatively, show a summary at the end. Designed around the
- * insight that each puzzle takes ~10 seconds — daily-one-puzzle
- * was leaving most of the entertainment on the table.
+ * Round-mode play: walk through the images in a Spot the Ball set,
+ * score cumulatively, summary at the end.
  *
  * Storage:
- *   - mob:stb:round:{seed}      → completed round summary (per seed)
- *   - mob:stb:scores:v1         → individual puzzle scores (shared
- *     with the archive view; saved on first attempt only)
- *
- * Replaying a completed round shows the summary first with a
- * "Replay (no score saved)" option for practice.
+ *   - mob:stb:set:{set_id}      → completed-round summary
+ *   - mob:stb:image-scores:v2   → per-image scores (shared with
+ *     archive view for badge rendering)
  */
 
-const ROUND_KEY_PREFIX = "mob:stb:round:";
-const SCORES_KEY = "mob:stb:scores:v1";
+const SET_KEY_PREFIX = "mob:stb:set:";
+const IMAGE_SCORES_KEY = "mob:stb:image-scores:v2";
 
-type PuzzleResult = {
-  puzzle_date: string;
+type ImageResult = {
+  image_id: number;
   guess_x_pct: number;
   guess_y_pct: number;
   distance_pct: number;
@@ -32,57 +27,52 @@ type PuzzleResult = {
 };
 
 type RoundSummary = {
-  seed: string;
-  results: PuzzleResult[];
+  set_id: number;
+  results: ImageResult[];
   total_points: number;
   completed_at: string;
 };
 
-type StoredIndividualResult = {
-  date: string;
-  guess_x_pct: number;
-  guess_y_pct: number;
+type StoredImageScore = {
+  image_id: number;
   distance_pct: number;
   band: "perfect" | "close" | "miss";
   played_at: string;
 };
 
 
-function loadRound(seed: string): RoundSummary | null {
+function loadSetSummary(set_id: number): RoundSummary | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(ROUND_KEY_PREFIX + seed);
+    const raw = localStorage.getItem(SET_KEY_PREFIX + set_id);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-function saveRound(round: RoundSummary): void {
-  localStorage.setItem(ROUND_KEY_PREFIX + round.seed, JSON.stringify(round));
+function saveSetSummary(round: RoundSummary): void {
+  localStorage.setItem(SET_KEY_PREFIX + round.set_id, JSON.stringify(round));
 }
 
-function saveIndividualResultIfFirst(r: PuzzleResult): void {
+function saveImageScoreIfFirst(r: ImageResult): void {
   try {
-    const all: Record<string, StoredIndividualResult> = JSON.parse(
-      localStorage.getItem(SCORES_KEY) || "{}",
-    );
-    if (all[r.puzzle_date]) return;  // first attempt wins
-    all[r.puzzle_date] = {
-      date: r.puzzle_date,
-      guess_x_pct: r.guess_x_pct,
-      guess_y_pct: r.guess_y_pct,
+    const all: Record<string, StoredImageScore> =
+      JSON.parse(localStorage.getItem(IMAGE_SCORES_KEY) || "{}");
+    if (all[r.image_id]) return;
+    all[r.image_id] = {
+      image_id: r.image_id,
       distance_pct: r.distance_pct,
       band: r.band,
       played_at: new Date().toISOString(),
     };
-    localStorage.setItem(SCORES_KEY, JSON.stringify(all));
+    localStorage.setItem(IMAGE_SCORES_KEY, JSON.stringify(all));
   } catch {
-    /* ignore — localStorage might be disabled */
+    /* localStorage might be disabled */
   }
 }
 
-function bandFor(distance_pct: number): PuzzleResult["band"] {
+function bandFor(distance_pct: number): ImageResult["band"] {
   if (distance_pct <= 3) return "perfect";
   if (distance_pct <= 7) return "close";
   return "miss";
@@ -94,28 +84,24 @@ function pointsFor(distance_pct: number): number {
 
 
 export function SpotTheBallRound({
-  round,
+  set: thisSet,
 }: {
-  round: { seed: string; puzzles: SpotTheBallPuzzle[] };
+  set: SpotTheBallSet;
 }) {
   const [savedSummary, setSavedSummary] = useState<RoundSummary | null>(null);
-  // `practice` is set to true when the user replays a completed round —
-  // we don't overwrite the saved summary in that mode.
   const [practice, setPractice] = useState(false);
   const [idx, setIdx] = useState(0);
-  const [results, setResults] = useState<PuzzleResult[]>([]);
+  const [results, setResults] = useState<ImageResult[]>([]);
   const [guess, setGuess] = useState<{ x_pct: number; y_pct: number } | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
 
-  // Load prior result on mount — if a round under this seed is
-  // already played, drop straight into the summary view.
   useEffect(() => {
-    const prior = loadRound(round.seed);
+    const prior = loadSetSummary(thisSet.id);
     if (prior) setSavedSummary(prior);
-  }, [round.seed]);
+  }, [thisSet.id]);
 
-  const total = round.puzzles.length;
-  const current = round.puzzles[idx] ?? null;
+  const total = thisSet.images.length;
+  const current = thisSet.images[idx] ?? null;
   const revealed = guess !== null;
 
   const distanceForGuess = useMemo(() => {
@@ -142,15 +128,15 @@ export function SpotTheBallRound({
 
   const advance = useCallback(() => {
     if (!current || !guess || distanceForGuess === null) return;
-    const result: PuzzleResult = {
-      puzzle_date: current.puzzle_date,
+    const result: ImageResult = {
+      image_id: current.id,
       guess_x_pct: guess.x_pct,
       guess_y_pct: guess.y_pct,
       distance_pct: distanceForGuess,
       band: bandFor(distanceForGuess),
       points: pointsFor(distanceForGuess),
     };
-    if (!practice) saveIndividualResultIfFirst(result);
+    if (!practice) saveImageScoreIfFirst(result);
 
     const next = [...results, result];
     setResults(next);
@@ -159,25 +145,22 @@ export function SpotTheBallRound({
     if (idx + 1 < total) {
       setIdx(idx + 1);
     } else {
-      // Round complete.
       const summary: RoundSummary = {
-        seed: round.seed,
+        set_id: thisSet.id,
         results: next,
         total_points: next.reduce((s, r) => s + r.points, 0),
         completed_at: new Date().toISOString(),
       };
-      if (!practice) saveRound(summary);
+      if (!practice) saveSetSummary(summary);
       setSavedSummary(summary);
     }
-  }, [current, guess, distanceForGuess, idx, total, results, practice, round.seed]);
-
-  // --- Summary view -----------------------------------------------
+  }, [current, guess, distanceForGuess, idx, total, results, practice, thisSet.id]);
 
   if (savedSummary && !practice) {
     return (
       <RoundSummaryView
         summary={savedSummary}
-        puzzles={round.puzzles}
+        images={thisSet.images}
         onReplay={() => {
           setPractice(true);
           setSavedSummary(null);
@@ -190,14 +173,13 @@ export function SpotTheBallRound({
   }
 
   if (!current) {
-    return <p className="text-sm text-text-muted">No puzzles in this round.</p>;
+    return <p className="text-sm text-text-muted">This set is empty.</p>;
   }
-
-  // --- Play view --------------------------------------------------
 
   return (
     <div className="space-y-4">
       <RoundHeader
+        title={thisSet.title}
         idx={idx}
         total={total}
         cumulative={cumulativePoints}
@@ -205,7 +187,7 @@ export function SpotTheBallRound({
       />
 
       <div className="text-xs uppercase tracking-wider text-text-muted">
-        {current.puzzle_date} · {current.caption}
+        {current.caption}
       </div>
 
       <div
@@ -272,11 +254,13 @@ export function SpotTheBallRound({
 
 
 function RoundHeader({
+  title,
   idx,
   total,
   cumulative,
   practice,
 }: {
+  title: string | null;
   idx: number;
   total: number;
   cumulative: number;
@@ -286,7 +270,7 @@ function RoundHeader({
     <header className="flex items-baseline justify-between gap-3">
       <div>
         <div className="text-[10px] font-bold uppercase tracking-wider text-accent">
-          {practice ? "Practice" : "Today's round"}
+          {practice ? "Practice" : title || "Today's round"}
         </div>
         <h1 className="mt-1 text-2xl font-bold tracking-tight">
           Spot the ball · {idx + 1} of {total}
@@ -307,14 +291,14 @@ function RoundHeader({
 
 function RoundSummaryView({
   summary,
-  puzzles,
+  images,
   onReplay,
 }: {
   summary: RoundSummary;
-  puzzles: SpotTheBallPuzzle[];
+  images: SpotTheBallImage[];
   onReplay: () => void;
 }) {
-  const max_possible = puzzles.length * 100;
+  const max_possible = images.length * 100;
   return (
     <div className="space-y-5">
       <header>
@@ -329,7 +313,7 @@ function RoundSummaryView({
 
       <ul className="divide-y divide-ink-700 overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
         {summary.results.map((r) => {
-          const p = puzzles.find((pp) => pp.puzzle_date === r.puzzle_date);
+          const img = images.find((i) => i.id === r.image_id);
           const tone =
             r.band === "perfect"
               ? "text-emerald-300"
@@ -337,18 +321,18 @@ function RoundSummaryView({
                 ? "text-amber-300"
                 : "text-red-300";
           return (
-            <li key={r.puzzle_date} className="flex items-center gap-3 p-3">
-              {p && (
+            <li key={r.image_id} className="flex items-center gap-3 p-3">
+              {img && (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                  src={p.image_url}
+                  src={img.image_url}
                   alt=""
                   className="h-12 w-20 shrink-0 rounded object-cover"
                 />
               )}
               <div className="flex-1 min-w-0">
                 <div className="line-clamp-1 text-sm font-medium text-text-primary">
-                  {p?.caption ?? r.puzzle_date}
+                  {img?.caption ?? `Image #${r.image_id}`}
                 </div>
                 <div className={`text-xs ${tone}`}>
                   {r.band} · {r.distance_pct.toFixed(1)}% off
@@ -376,8 +360,6 @@ function RoundSummaryView({
   );
 }
 
-
-// --- Pin / line / result panel (mirrors SpotTheBall.tsx) -------------
 
 function Pin({
   x_pct,
