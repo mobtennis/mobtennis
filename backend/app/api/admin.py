@@ -322,10 +322,17 @@ def _candidate_view_from(img: PlayerImage, player: Player) -> CandidateView:
 
 def _candidates_for_builder(
     session: Session, limit: int,
+    extra_exclude: set[int] | None = None,
 ) -> list[CandidateView]:
     """Top-N PlayerImages to offer the admin builder. Filters by
     ranking + hero-eligibility, excludes already-used and skipped
-    images. Ordered newest-first by year-in-filename."""
+    images. Ordered newest-first by year-in-filename.
+
+    `extra_exclude` lets the grid-based builder feed back which
+    PlayerImage IDs the operator has already seen in this session,
+    so "Next 10" advances through the pool instead of returning
+    the same top-N each time.
+    """
     used_ids: set[int] = set()
     for r in session.exec(
         select(SpotTheBallImage.source_player_image_id).where(
@@ -336,6 +343,8 @@ def _candidates_for_builder(
             used_ids.add(r)
     skipped_ids = set(session.exec(select(SpotTheBallSkip.player_image_id)).all())
     exclude = used_ids | skipped_ids
+    if extra_exclude:
+        exclude = exclude | extra_exclude
 
     stmt = (
         select(PlayerImage, Player)
@@ -430,19 +439,64 @@ def builder_next_candidate(session: Session = Depends(get_session)):
 )
 def builder_candidates(
     limit: int = Query(10, ge=1, le=50),
+    exclude: str | None = Query(None, description="Comma-separated PlayerImage IDs to skip this round"),
     session: Session = Depends(get_session),
 ):
     """Batch of candidates for the grid-based builder. Operator
     sees N thumbnails at once, scans for usable shots, clicks into
-    a modal for each to calibrate."""
+    a modal for each to calibrate.
+
+    `exclude` lets the client pass back IDs it has already shown so
+    "Next 10" advances rather than returning the same top-N. The
+    server-side skip table only fills when the operator actively
+    rejects an image; this session-level exclude is just pagination.
+    """
+    extra: set[int] = set()
+    if exclude:
+        for part in exclude.split(","):
+            try:
+                extra.add(int(part))
+            except ValueError:
+                continue
     return {
-        "candidates": _candidates_for_builder(session, limit),
+        "candidates": _candidates_for_builder(session, limit, extra_exclude=extra),
         "stats": _candidate_stats(session),
     }
 
 
 class SkipBody(BaseModel):
     player_image_id: int
+
+
+class SkipBatchBody(BaseModel):
+    player_image_ids: list[int]
+
+
+@router.post(
+    "/spot-the-ball/builder/skip-batch",
+    dependencies=[Depends(_require_admin_key)],
+)
+def builder_skip_batch(
+    body: SkipBatchBody,
+    session: Session = Depends(get_session),
+):
+    """Bulk-skip a list of PlayerImages. The grid builder calls this
+    when the operator hits 'Next 10' without acting on the visible
+    batch — implicit rejection. Same semantics as POSTing /skip for
+    each, just one round-trip."""
+    existing = set(session.exec(
+        select(SpotTheBallSkip.player_image_id).where(
+            SpotTheBallSkip.player_image_id.in_(body.player_image_ids),
+        )
+    ).all())
+    added = 0
+    for pid in body.player_image_ids:
+        if pid in existing:
+            continue
+        session.add(SpotTheBallSkip(player_image_id=pid))
+        added += 1
+    session.commit()
+    return {"skipped": added}
 
 
 @router.post(

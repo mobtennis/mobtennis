@@ -56,18 +56,37 @@ export function SpotTheBallBuilderGrid({ adminKey }: { adminKey: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Candidate | null>(null);
+  // Session-level pagination: every candidate we've shown gets added
+  // here. "Next 10" sends this back to the server so we advance
+  // through the pool instead of getting the same top-N each time.
+  // Resets only on full page reload, which gives the operator a way
+  // to start over.
+  const [seenIds, setSeenIds] = useState<Set<number>>(new Set());
 
-  const loadBatch = useCallback(async () => {
+  const loadBatch = useCallback(async (excludeIds: Set<number>) => {
     setLoading(true);
     setError(null);
     try {
+      const params = new URLSearchParams({
+        limit: String(BATCH_SIZE),
+        key: adminKey,
+      });
+      if (excludeIds.size > 0) {
+        params.set("exclude", [...excludeIds].join(","));
+      }
       const res = await fetch(
-        `${API_BASE}/api/admin/spot-the-ball/builder/candidates?limit=${BATCH_SIZE}&key=${encodeURIComponent(adminKey)}`,
+        `${API_BASE}/api/admin/spot-the-ball/builder/candidates?${params}`,
       );
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const data: BatchResponse = await res.json();
       setCandidates(data.candidates);
       setStats(data.stats);
+      // Mark these as seen so the next "Next 10" advances past them.
+      setSeenIds((prev) => {
+        const next = new Set(prev);
+        for (const c of data.candidates) next.add(c.player_image_id);
+        return next;
+      });
     } catch (e) {
       setError(String(e));
     } finally {
@@ -75,28 +94,57 @@ export function SpotTheBallBuilderGrid({ adminKey }: { adminKey: string }) {
     }
   }, [adminKey]);
 
-  useEffect(() => {
-    loadBatch();
+  const loadFirstBatch = useCallback(() => {
+    setSeenIds(new Set());
+    loadBatch(new Set());
   }, [loadBatch]);
 
+  const loadNextBatch = useCallback(async () => {
+    // Implicit reject: anything visible when the operator clicks
+    // "Next 10" is added to the permanent skip list. They've already
+    // chosen not to engage with these photos; coming back to them
+    // later wastes their time.
+    const visibleIds = candidates.map((c) => c.player_image_id);
+    if (visibleIds.length > 0) {
+      try {
+        await fetch(
+          `${API_BASE}/api/admin/spot-the-ball/builder/skip-batch?key=${encodeURIComponent(adminKey)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ player_image_ids: visibleIds }),
+          },
+        );
+      } catch {
+        /* non-fatal: the session-level exclude still hides them
+           this round; worst case they reappear next page-reload. */
+      }
+    }
+    loadBatch(seenIds);
+  }, [loadBatch, seenIds, candidates, adminKey]);
+
+  useEffect(() => {
+    loadFirstBatch();
+    // intentionally only on mount; loadFirstBatch identity doesn't matter
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Remove a candidate from the local batch after the operator takes
-  // an action on it. Auto-refetches when we drain the batch so the
-  // operator doesn't have to click "Next 10" if they work through
-  // everything in front of them.
+  // an action on it. Auto-advances when we drain the batch.
   const actioned = useCallback(
     (player_image_id: number) => {
       setCandidates((prev) => {
         const next = prev.filter((c) => c.player_image_id !== player_image_id);
         if (next.length === 0) {
-          // Defer to the next tick so the modal close doesn't fight
-          // with the auto-refetch's loading state.
-          setTimeout(loadBatch, 0);
+          // Drained the visible batch — auto-load fresh ones,
+          // continuing past the IDs we've already shown.
+          setTimeout(() => loadBatch(seenIds), 0);
         }
         return next;
       });
       setSelected(null);
     },
-    [loadBatch],
+    [loadBatch, seenIds],
   );
 
   return (
@@ -175,11 +223,19 @@ export function SpotTheBallBuilderGrid({ adminKey }: { adminKey: string }) {
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={loadBatch}
+            onClick={loadNextBatch}
             disabled={loading}
             className="rounded-md border border-ink-700 px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-ink-800 disabled:opacity-50"
           >
             {loading ? "Loading…" : `Next ${BATCH_SIZE} →`}
+          </button>
+          <button
+            type="button"
+            onClick={loadFirstBatch}
+            disabled={loading}
+            className="rounded-md border border-ink-700 px-3 py-1.5 text-xs font-medium text-text-muted hover:bg-ink-800 disabled:opacity-50"
+          >
+            Reset
           </button>
           <span className="text-xs text-text-muted">
             (or click a thumb to calibrate it)
