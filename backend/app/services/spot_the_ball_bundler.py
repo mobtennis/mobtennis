@@ -49,16 +49,13 @@ def _next_publish_date(session: Session) -> date:
     return max(last + timedelta(days=1), today)
 
 
-def bundle_pool(session: Session, rng: random.Random | None = None) -> list[SpotTheBallSet]:
-    """Form as many sets-of-5 as the current pool allows.
-
-    The `rng` arg is for deterministic testing; production callers
-    leave it None to use the module-level random instance.
-    """
-    if rng is None:
-        rng = random.Random()
-
-    # Fetch inpainted-and-unbundled images, joined to their player.
+def _pool_grouped_by_player(
+    session: Session,
+) -> "dict[int | str, list[SpotTheBallImage]]":
+    """Inpainted-not-yet-bundled-not-rejected images, grouped by
+    player. Hand-seeded rows (no player_image_id) get a sentinel
+    key per image so each functions as its own "player" for the
+    no-dupe-per-set rule."""
     rows = session.exec(
         select(SpotTheBallImage, PlayerImage.player_id)
         .join(PlayerImage, PlayerImage.id == SpotTheBallImage.source_player_image_id, isouter=True)
@@ -68,15 +65,84 @@ def bundle_pool(session: Session, rng: random.Random | None = None) -> list[Spot
             SpotTheBallImage.inpaint_rejected_at.is_(None),
         )
     ).all()
-
-    # Group by player_id. Images without a known player (hand-seeded
-    # legacy rows) get a sentinel "no-player" bucket — at most one of
-    # those is allowed per set (treated as a distinct "player").
     by_player: dict[int | str, list[SpotTheBallImage]] = defaultdict(list)
     for img, player_id in rows:
         key = player_id if player_id is not None else f"none-{img.id}"
         by_player[key].append(img)
+    return by_player
 
+
+def topup_short_sets(
+    session: Session, rng: random.Random,
+) -> int:
+    """Refill any existing set that has fewer than 5 images. Pulls
+    from the pool, respecting the no-duplicate-player rule within
+    the destination set. Returns the number of images placed.
+
+    Called whenever a set drops below 5 — admin removed an image,
+    set was just bundled in an earlier short-pool state, etc.
+    """
+    by_player = _pool_grouped_by_player(session)
+    if not by_player:
+        return 0
+
+    placed = 0
+    sets = session.exec(select(SpotTheBallSet)).all()
+    for s in sets:
+        existing = session.exec(
+            select(SpotTheBallImage, PlayerImage.player_id)
+            .join(
+                PlayerImage,
+                PlayerImage.id == SpotTheBallImage.source_player_image_id,
+                isouter=True,
+            )
+            .where(SpotTheBallImage.set_id == s.id)
+        ).all()
+        if len(existing) >= IMAGES_PER_SET:
+            continue
+        used_players = {pid for _, pid in existing if pid is not None}
+        existing_positions = {
+            img.position for img, _ in existing if img.position is not None
+        }
+        missing_positions = sorted(
+            set(range(1, IMAGES_PER_SET + 1)) - existing_positions
+        )
+        need = len(missing_positions)
+        # Candidate players: those whose pool has at least one image
+        # AND who aren't already in this set.
+        candidates = [p for p in by_player if p not in used_players]
+        if len(candidates) < need:
+            # Can't fully top up without violating the no-dupe rule.
+            # Skip — bundler stays idempotent; we'll try again when
+            # the pool grows.
+            continue
+        chosen = rng.sample(candidates, need)
+        for player_key, pos in zip(chosen, missing_positions):
+            img = rng.choice(by_player[player_key])
+            img.set_id = s.id
+            img.position = pos
+            session.add(img)
+            by_player[player_key].remove(img)
+            if not by_player[player_key]:
+                del by_player[player_key]
+            placed += 1
+        session.commit()
+        log.info("topped up set %d with %d image(s)", s.id, need)
+    return placed
+
+
+def bundle_pool(session: Session, rng: random.Random | None = None) -> list[SpotTheBallSet]:
+    """Refill short sets first, then form as many new sets-of-5 as
+    the remaining pool allows.
+    """
+    if rng is None:
+        rng = random.Random()
+
+    # Top up existing short sets first so admin-removed slots refill
+    # before we burn pool variety on new sets.
+    topup_short_sets(session, rng)
+
+    by_player = _pool_grouped_by_player(session)
     sets_built: list[SpotTheBallSet] = []
     while len(by_player) >= IMAGES_PER_SET:
         # Random sample of 5 distinct players.
