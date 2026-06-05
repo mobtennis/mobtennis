@@ -85,3 +85,9 @@ class QueueResponse(BaseModel):
     """Admin queue view: pool first, then published sets newest-first."""
     pool: list[QueueImageItem]
     sets: list[SpotTheBallSetView]
+    # Flat list of every image (set or pool) that still needs an
+    # inpaint pass — pool images that haven't been processed AND
+    # in-set images the admin rejected. The local processor consumes
+    # this so a "reject" on an already-bundled image gets fixed on
+    # the next run.
+    images_needing_inpaint: list[QueueImageItem]

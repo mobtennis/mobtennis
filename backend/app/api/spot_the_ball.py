@@ -26,10 +26,28 @@ router = APIRouter(prefix="/api/spot-the-ball", tags=["spot-the-ball"])
 
 
 def _published_filter():
+    """A set is publicly visible iff:
+      - is_published flag is set
+      - publish_date has arrived
+      - every image in the set is inpainted (i.e. no rejected /
+        not-yet-processed images that would expose the ball-visible
+        source URL to a player)
+
+    The last clause is the important one — if any image in the set
+    has been admin-rejected for inpaint, or hasn't been processed
+    yet, the whole set drops out of the public surface until the
+    next processor run fixes it. Public never serves a ball-visible
+    image.
+    """
     today = date.today()
+    sets_with_unfinished_images = select(SpotTheBallImage.set_id).where(
+        SpotTheBallImage.set_id.is_not(None),
+        SpotTheBallImage.is_inpainted == False,  # noqa: E712
+    )
     return (
         SpotTheBallSet.is_published == True,  # noqa: E712
         SpotTheBallSet.publish_date <= today,
+        SpotTheBallSet.id.notin_(sets_with_unfinished_images),
     )
 
 

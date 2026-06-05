@@ -525,24 +525,30 @@ def admin_queue(session: Session = Depends(get_session)):
         select(SpotTheBallSet)
         .order_by(SpotTheBallSet.publish_date.desc())
     ).all()
+    needing_inpaint = session.exec(
+        select(SpotTheBallImage)
+        .where(SpotTheBallImage.is_inpainted == False)  # noqa: E712
+        .order_by(SpotTheBallImage.id.asc())
+    ).all()
+
+    def _to_qi(i: SpotTheBallImage) -> QueueImageItem:
+        return QueueImageItem(
+            id=i.id,
+            set_id=i.set_id,
+            position=i.position,
+            image_url=i.image_url,
+            original_image_url=i.original_image_url,
+            caption=i.caption,
+            is_inpainted=i.is_inpainted,
+            inpaint_attempts=i.inpaint_attempts,
+            inpaint_rejected_at=i.inpaint_rejected_at.isoformat() if i.inpaint_rejected_at else None,
+            ball_x_pct=i.ball_x_pct,
+            ball_y_pct=i.ball_y_pct,
+        )
 
     return QueueResponse(
-        pool=[
-            QueueImageItem(
-                id=i.id,
-                set_id=i.set_id,
-                position=i.position,
-                image_url=i.image_url,
-                original_image_url=i.original_image_url,
-                caption=i.caption,
-                is_inpainted=i.is_inpainted,
-                inpaint_attempts=i.inpaint_attempts,
-                inpaint_rejected_at=i.inpaint_rejected_at.isoformat() if i.inpaint_rejected_at else None,
-                ball_x_pct=i.ball_x_pct,
-                ball_y_pct=i.ball_y_pct,
-            )
-            for i in pool_images
-        ],
+        images_needing_inpaint=[_to_qi(i) for i in needing_inpaint],
+        pool=[_to_qi(i) for i in pool_images],
         sets=[
             SpotTheBallSetView(
                 id=s.id,

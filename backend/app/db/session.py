@@ -98,13 +98,11 @@ def _migrate() -> None:
         ("players", "hero_image_url", "TEXT"),
         ("player_images", "is_hero", "INTEGER DEFAULT 0"),
         ("player_images", "is_hero_eligible", "INTEGER DEFAULT 0"),
-        # spot_the_ball_puzzles is the LEGACY table — replaced by
-        # spot_the_ball_sets + spot_the_ball_images after the refactor.
-        # The migration script in scripts/migrate_spot_the_ball.py copies
-        # data over then drops the legacy table.
-        ("spot_the_ball_puzzles", "original_image_url", "TEXT"),
-        ("spot_the_ball_puzzles", "player_image_id", "INTEGER"),
-        ("spot_the_ball_puzzles", "is_published", "INTEGER DEFAULT 0"),
+        # spot_the_ball_puzzles existed pre-refactor. scripts/
+        # migrate_spot_the_ball.py drops the table after copying data
+        # into spot_the_ball_sets + spot_the_ball_images, so the
+        # legacy column-adds for that table have been removed —
+        # otherwise startup-time _migrate() trips on a missing table.
         ("matches", "stats_json", "TEXT"),
         ("matches", "bracket_position", "INTEGER"),
         ("matches", "player1_seed", "INTEGER"),

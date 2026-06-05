@@ -136,14 +136,18 @@ def _ai_inpaint(
 
 
 def _fetch_pool() -> list[dict]:
-    """Pool images that need inpainting (set_id null, is_inpainted false)."""
+    """Every image that needs inpainting — pool members not yet
+    processed PLUS already-bundled images the admin rejected. Backend
+    returns this combined list as `images_needing_inpaint` so the
+    reject-then-re-process loop works without us having to think
+    about set membership here."""
     if not ADMIN_KEY:
         raise RuntimeError("ADMIN_KEY env var required")
     with urllib.request.urlopen(
         f"{API_BASE}/api/admin/spot-the-ball/queue?key={ADMIN_KEY}",
     ) as r:
         data = json.load(r)
-    return [p for p in data.get("pool", []) if not p["is_inpainted"]]
+    return list(data.get("images_needing_inpaint", []))
 
 
 def _prod_update(image_id: int, new_image_url: str) -> None:
