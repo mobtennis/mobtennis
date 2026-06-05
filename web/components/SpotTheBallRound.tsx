@@ -24,6 +24,13 @@ type ImageResult = {
   distance_pct: number;
   band: "perfect" | "close" | "miss";
   points: number;
+  // Snapshot of the image's display metadata at result-save time —
+  // means the summary still renders correctly if the image is later
+  // removed from the set by admin tooling (or the user replays the
+  // round after the set composition changed via top-up). Optional
+  // for backwards-compat with older saved rounds in localStorage.
+  caption?: string;
+  image_url?: string;
 };
 
 type RoundSummary = {
@@ -135,6 +142,8 @@ export function SpotTheBallRound({
       distance_pct: distanceForGuess,
       band: bandFor(distanceForGuess),
       points: pointsFor(distanceForGuess),
+      caption: current.caption,
+      image_url: current.image_url,
     };
     if (!practice) saveImageScoreIfFirst(result);
 
@@ -333,7 +342,12 @@ function RoundSummaryView({
 
       <ul className="divide-y divide-ink-700 overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
         {summary.results.map((r) => {
-          const img = images.find((i) => i.id === r.image_id);
+          // Prefer the snapshot stored on the result row, fall back
+          // to a live lookup for backwards-compat with rounds saved
+          // before the snapshot was added.
+          const live = images.find((i) => i.id === r.image_id);
+          const caption = r.caption ?? live?.caption ?? `Image #${r.image_id}`;
+          const image_url = r.image_url ?? live?.image_url;
           const tone =
             r.band === "perfect"
               ? "text-emerald-300"
@@ -342,17 +356,17 @@ function RoundSummaryView({
                 : "text-red-300";
           return (
             <li key={r.image_id} className="flex items-center gap-3 p-3">
-              {img && (
+              {image_url && (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                  src={img.image_url}
+                  src={image_url}
                   alt=""
                   className="h-12 w-20 shrink-0 rounded object-cover"
                 />
               )}
               <div className="flex-1 min-w-0">
                 <div className="line-clamp-1 text-sm font-medium text-text-primary">
-                  {img?.caption ?? `Image #${r.image_id}`}
+                  {caption}
                 </div>
                 <div className={`text-xs ${tone}`}>
                   {r.band} · {r.distance_pct.toFixed(1)}% off
