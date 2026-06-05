@@ -295,19 +295,37 @@ def set_player_image_hidden(
 # a `caption` override on the schedule body if they want themed copy.
 
 
-def _next_candidate_for_builder(session: Session) -> CandidateView | None:
-    """Find the next PlayerImage to offer the admin builder. Filters
-    by ranking + hero-eligibility, excludes already-used and skipped
-    images. Orders newest-first by year-in-filename (so the operator
-    sees current photos before old ones)."""
-    import re
+import re
 
-    _YEAR_RE = re.compile(r"(?<!\d)(19[89]\d|20[0-2]\d)(?!\d)")
+_YEAR_RE = re.compile(r"(?<!\d)(19[89]\d|20[0-2]\d)(?!\d)")
 
-    def _photo_year(url: str) -> int:
-        years = _YEAR_RE.findall(url or "")
-        return max((int(y) for y in years), default=0)
 
+def _photo_year(url: str) -> int:
+    years = _YEAR_RE.findall(url or "")
+    return max((int(y) for y in years), default=0)
+
+
+def _candidate_view_from(img: PlayerImage, player: Player) -> CandidateView:
+    return CandidateView(
+        player_image_id=img.id,
+        image_url=img.url,
+        player_slug=player.slug,
+        player_name=player.full_name or "",
+        suggested_caption=player.full_name or "",
+        credit=img.credit,
+        license_url=img.license_url,
+        source_url=_commons_file_page_url(img.url),
+        width=img.width,
+        height=img.height,
+    )
+
+
+def _candidates_for_builder(
+    session: Session, limit: int,
+) -> list[CandidateView]:
+    """Top-N PlayerImages to offer the admin builder. Filters by
+    ranking + hero-eligibility, excludes already-used and skipped
+    images. Ordered newest-first by year-in-filename."""
     used_ids: set[int] = set()
     for r in session.exec(
         select(SpotTheBallImage.source_player_image_id).where(
@@ -332,21 +350,16 @@ def _next_candidate_for_builder(session: Session) -> CandidateView | None:
         stmt = stmt.where(PlayerImage.id.notin_(exclude))
     rows = session.exec(stmt).all()
     if not rows:
-        return None
+        return []
     rows.sort(key=lambda t: (-_photo_year(t[0].url), -t[0].id))
-    img, player = rows[0]
-    return CandidateView(
-        player_image_id=img.id,
-        image_url=img.url,
-        player_slug=player.slug,
-        player_name=player.full_name or "",
-        suggested_caption=player.full_name or "",
-        credit=img.credit,
-        license_url=img.license_url,
-        source_url=_commons_file_page_url(img.url),
-        width=img.width,
-        height=img.height,
-    )
+    return [_candidate_view_from(img, player) for img, player in rows[:limit]]
+
+
+def _next_candidate_for_builder(session: Session) -> CandidateView | None:
+    """Single-shot variant kept for backwards compat with the older
+    1-image-at-a-time builder flow."""
+    out = _candidates_for_builder(session, 1)
+    return out[0] if out else None
 
 
 def _commons_file_page_url(upload_url: str) -> str | None:
@@ -407,6 +420,23 @@ def _candidate_stats(session: Session) -> CandidateStats:
 def builder_next_candidate(session: Session = Depends(get_session)):
     return {
         "candidate": _next_candidate_for_builder(session),
+        "stats": _candidate_stats(session),
+    }
+
+
+@router.get(
+    "/spot-the-ball/builder/candidates",
+    dependencies=[Depends(_require_admin_key)],
+)
+def builder_candidates(
+    limit: int = Query(10, ge=1, le=50),
+    session: Session = Depends(get_session),
+):
+    """Batch of candidates for the grid-based builder. Operator
+    sees N thumbnails at once, scans for usable shots, clicks into
+    a modal for each to calibrate."""
+    return {
+        "candidates": _candidates_for_builder(session, limit),
         "stats": _candidate_stats(session),
     }
 

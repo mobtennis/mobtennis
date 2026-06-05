@@ -1,4 +1,4 @@
-import { SpotTheBallBuilder } from "@/components/SpotTheBallBuilder";
+import { SpotTheBallBuilderGrid } from "@/components/SpotTheBallBuilderGrid";
 
 // Admin-only — robots noindex + revalidate=0 so data is always live.
 export const revalidate = 0;
@@ -24,5 +24,5 @@ export default async function SpotTheBallBuilderPage({
       </div>
     );
   }
-  return <SpotTheBallBuilder adminKey={key} />;
+  return <SpotTheBallBuilderGrid adminKey={key} />;
 }
