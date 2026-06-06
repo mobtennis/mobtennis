@@ -7,6 +7,7 @@ from app.models.player import Player, Tour
 from app.models.player_image import PlayerImage
 from app.models.push_token import PushToken
 from app.models.ranking import Ranking
+from app.models.name_the_pro import NameTheProImage, NameTheProSet
 from app.models.spot_the_ball import (
     SpotTheBallImage,
     SpotTheBallSet,
@@ -22,6 +23,8 @@ __all__ = [
     "MatchFollow",
     "MatchFollowGranularity",
     "MatchStatus",
+    "NameTheProImage",
+    "NameTheProSet",
     "NewsItem",
     "Player",
     "PlayerImage",

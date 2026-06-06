@@ -30,6 +30,7 @@ from app.db.session import get_session
 from app.models.digest import EditorialDigest
 from app.models.player import Player
 from app.models.player_image import PlayerImage
+from app.models.name_the_pro import NameTheProImage, NameTheProSet
 from app.models.spot_the_ball import SpotTheBallImage, SpotTheBallSet, SpotTheBallSkip
 from app.schemas.digest import CampaignBrief, CampaignBriefsResponse
 from app.schemas.player import PlayerImageView
@@ -811,3 +812,56 @@ def admin_reject_inpaint(
     session.add(img)
     session.commit()
     return {"rejected": image_id, "inpaint_attempts": img.inpaint_attempts}
+
+
+# ---------------------------------------------------------------------------
+# Name the Pro admin
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/name-the-pro/bundle",
+    dependencies=[Depends(_require_admin_key)],
+)
+def trigger_ntp_bundle(session: Session = Depends(get_session)):
+    """Run the NTP bundler. Forms as many sets-of-5 as the eligible
+    pool allows under the tier-stratification + no-duplicate-player
+    constraints. Idempotent."""
+    from app.services.name_the_pro_bundler import bundle_ntp
+    sets = bundle_ntp(session)
+    return {"sets_created": len(sets), "set_ids": [s.id for s in sets]}
+
+
+@router.get(
+    "/name-the-pro/queue",
+    dependencies=[Depends(_require_admin_key)],
+)
+def ntp_queue(session: Session = Depends(get_session)):
+    """All NTP sets, newest first, with thumbnail of the first image
+    for each. Opportunistically runs the bundler on each visit so
+    new sets land without an operator step."""
+    from app.services.name_the_pro_bundler import bundle_ntp
+    bundle_ntp(session)
+    rows = session.exec(
+        select(NameTheProSet).order_by(NameTheProSet.publish_date.desc())
+    ).all()
+    out = []
+    for s in rows:
+        first = session.exec(
+            select(NameTheProImage)
+            .where(NameTheProImage.set_id == s.id)
+            .order_by(NameTheProImage.position.asc())
+            .limit(1)
+        ).first()
+        count = len(session.exec(
+            select(NameTheProImage.id).where(NameTheProImage.set_id == s.id)
+        ).all())
+        out.append({
+            "id": s.id,
+            "title": s.title,
+            "publish_date": str(s.publish_date),
+            "is_published": s.is_published,
+            "image_count": count,
+            "cover_image_url": first.image_url if first else "",
+        })
+    return {"sets": out}
