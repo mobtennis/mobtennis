@@ -833,6 +833,34 @@ def trigger_ntp_bundle(session: Session = Depends(get_session)):
 
 
 @router.post(
+    "/name-the-pro/reset",
+    dependencies=[Depends(_require_admin_key)],
+)
+def reset_ntp_sets(session: Session = Depends(get_session)):
+    """Delete every NameTheProSet and its child images. Frees up the
+    source PlayerImages to be picked again by the next bundle run —
+    use this when the picker logic changed (e.g. a stricter face
+    filter rolled out) and you want to rebuild from scratch.
+
+    Destructive and irreversible. Player-side scores in localStorage
+    survive because they're keyed by set id, but the corresponding
+    sets won't resolve anymore — the archive will appear empty until
+    the bundler runs again.
+    """
+    img_ids = session.exec(select(NameTheProImage.id)).all()
+    set_ids = session.exec(select(NameTheProSet.id)).all()
+    for img in session.exec(select(NameTheProImage)).all():
+        session.delete(img)
+    for s in session.exec(select(NameTheProSet)).all():
+        session.delete(s)
+    session.commit()
+    return {
+        "deleted_images": len(img_ids),
+        "deleted_sets": len(set_ids),
+    }
+
+
+@router.post(
     "/name-the-pro/scan-faces",
     dependencies=[Depends(_require_admin_key)],
 )
