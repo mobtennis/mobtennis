@@ -74,5 +74,13 @@ class PlayerImage(SQLModel, table=True):
     # an awkward crop).
     is_hero: bool = Field(default=False, index=True)
 
+    # Face-visibility flag for the Name the Pro picker. Null = not yet
+    # scanned; True = at least one frontal face of reasonable size was
+    # detected by OpenCV's Haar cascade; False = nothing usable found.
+    # We only let NTP draw from True rows so the puzzle is actually
+    # answerable from the photo. Other surfaces (player profile, hero
+    # band, Spot the Ball) ignore this flag.
+    face_detected: bool | None = None
+
     discovered_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

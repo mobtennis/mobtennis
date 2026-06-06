@@ -832,6 +832,67 @@ def trigger_ntp_bundle(session: Session = Depends(get_session)):
     return {"sets_created": len(sets), "set_ids": [s.id for s in sets]}
 
 
+@router.post(
+    "/name-the-pro/scan-faces",
+    dependencies=[Depends(_require_admin_key)],
+)
+def trigger_face_scan(
+    limit: Annotated[int, Query(ge=1, le=2000)] = 200,
+    rescan: bool = False,
+    session: Session = Depends(get_session),
+):
+    """Run YuNet face detection over PlayerImages where face_detected
+    is null. Capped per call (default 200) so a single HTTP timeout
+    can't tank a long backfill — call repeatedly until the response
+    reports `remaining: 0`.
+
+    Set `rescan=true` to also re-check rows that previously failed
+    (useful if the model is upgraded). Slow: each image is downloaded
+    then inferred locally, ~200-400ms per row.
+    """
+    from app.services.face_detect import detect_face_at_url
+    q = select(PlayerImage).where(PlayerImage.is_hidden == False)  # noqa: E712
+    if rescan:
+        q = q.where(
+            (PlayerImage.face_detected.is_(None))
+            | (PlayerImage.face_detected == False)  # noqa: E712
+        )
+    else:
+        q = q.where(PlayerImage.face_detected.is_(None))
+    q = q.order_by(PlayerImage.id).limit(limit)
+    rows = session.exec(q).all()
+
+    positives = negatives = errors = 0
+    for img in rows:
+        result = detect_face_at_url(img.url)
+        if result.error:
+            errors += 1
+            continue
+        img.face_detected = result.detected
+        session.add(img)
+        if result.detected:
+            positives += 1
+        else:
+            negatives += 1
+    session.commit()
+
+    # Quick count of how much work is left so the caller can loop.
+    remaining = len(session.exec(
+        select(PlayerImage.id).where(
+            PlayerImage.is_hidden == False,         # noqa: E712
+            PlayerImage.face_detected.is_(None),
+        )
+    ).all())
+
+    return {
+        "scanned": len(rows),
+        "faces_found": positives,
+        "no_face": negatives,
+        "errors": errors,
+        "remaining_unscanned": remaining,
+    }
+
+
 @router.get(
     "/name-the-pro/queue",
     dependencies=[Depends(_require_admin_key)],

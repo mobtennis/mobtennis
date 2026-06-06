@@ -163,13 +163,20 @@ def _eligible_pool(
     session: Session, used_image_ids: set[int],
 ) -> dict[str, list[tuple[PlayerImage, Player]]]:
     """Hero-eligible PlayerImages joined to their Player, grouped
-    by ranking tier. Excludes images already used in NTP sets."""
+    by ranking tier. Excludes images already used in NTP sets and
+    images that haven't passed the face-visibility check."""
     rows = session.exec(
         select(PlayerImage, Player)
         .join(Player, Player.id == PlayerImage.player_id)
         .where(
             PlayerImage.is_hero_eligible == True,  # noqa: E712
             PlayerImage.is_hidden == False,        # noqa: E712
+            # NTP-specific: only photos where YuNet found a face of
+            # usable size. Photos with face_detected==None (not yet
+            # scanned) or False (no face) are deferred — the scanner
+            # script can clear the backlog and a re-bundle picks them
+            # up automatically.
+            PlayerImage.face_detected == True,     # noqa: E712
             Player.current_rank.is_not(None),
             Player.current_rank <= 300,
         )

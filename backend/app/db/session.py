@@ -98,6 +98,7 @@ def _migrate() -> None:
         ("players", "hero_image_url", "TEXT"),
         ("player_images", "is_hero", "INTEGER DEFAULT 0"),
         ("player_images", "is_hero_eligible", "INTEGER DEFAULT 0"),
+        ("player_images", "face_detected", "INTEGER"),
         # spot_the_ball_puzzles existed pre-refactor. scripts/
         # migrate_spot_the_ball.py drops the table after copying data
         # into spot_the_ball_sets + spot_the_ball_images, so the

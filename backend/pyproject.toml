@@ -18,6 +18,16 @@ dependencies = [
   # and the weekly cron job; if ANTHROPIC_API_KEY isn't set the generator
   # is a no-op, so the dep is dormant on deployments that don't run it.
   "anthropic>=0.45",
+  # Image processing.
+  #   pillow      — read remote photos for dimension checks.
+  #   numpy       — array bridge between pillow and opencv.
+  #   opencv-python-headless — face detection for the Name the Pro
+  #     picker (Haar cascade, deterministic, no model download). The
+  #     headless wheel skips the GUI bindings so it installs cleanly
+  #     on the Lightsail box without X11.
+  "pillow>=10.0",
+  "numpy>=1.26",
+  "opencv-python-headless>=4.10",
 ]
 
 [dependency-groups]
