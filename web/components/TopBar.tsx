@@ -28,7 +28,7 @@ export function TopBar() {
           <Link href="/rankings/atp" className="hover:text-text-primary">Rankings</Link>
           <Link href="/news" className="hover:text-text-primary">News</Link>
           <Link
-            href="/play/spot-the-ball"
+            href="/play"
             className="hover:text-text-primary"
           >
             Play

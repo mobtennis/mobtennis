@@ -441,6 +441,38 @@ export type SpotTheBallSetArchiveItem = {
   cover_image_url: string;
 };
 
+export type NameTheProOption = {
+  slug: string;
+  full_name: string;
+};
+
+export type NameTheProImage = {
+  id: number;
+  position: number | null;
+  image_url: string;
+  caption: string;
+  options: NameTheProOption[];
+  correct_player_slug: string;
+  credit: string | null;
+  license_url: string | null;
+  source_url: string | null;
+};
+
+export type NameTheProSet = {
+  id: number;
+  title: string | null;
+  publish_date: string;
+  images: NameTheProImage[];
+};
+
+export type NameTheProArchiveItem = {
+  id: number;
+  title: string | null;
+  publish_date: string;
+  image_count: number;
+  cover_image_url: string;
+};
+
 export type DigestDetail = DigestSummary & {
   body_md: string;
   model_name: string;
