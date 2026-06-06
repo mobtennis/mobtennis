@@ -80,13 +80,13 @@ function saveImageScoreIfFirst(r: ImageResult): void {
 }
 
 function bandFor(distance_pct: number): ImageResult["band"] {
-  if (distance_pct <= 3) return "perfect";
-  if (distance_pct <= 7) return "close";
+  if (distance_pct <= 5) return "perfect";
+  if (distance_pct <= 12) return "close";
   return "miss";
 }
 
 function pointsFor(distance_pct: number): number {
-  return Math.max(0, Math.round(100 - distance_pct * 7));
+  return Math.max(0, Math.round(100 - distance_pct * 5));
 }
 
 
