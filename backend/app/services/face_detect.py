@@ -49,33 +49,45 @@ _MODEL_PATH = (
 )
 _SCORE_THRESHOLD = 0.6
 _NMS_THRESHOLD = 0.3
+# Cap inference resolution. Tennis press photos commonly weigh in at
+# 2000-4000px on the long edge; YuNet works fine on a downscaled copy
+# and a fixed input keeps peak RSS predictable (the 2GB Lightsail box
+# OOMs around ~1.5GB if we run inference at full res). 1280 is a
+# reasonable balance — small enough to keep memory bounded, large
+# enough to still detect a 90px face from the original.
+_MAX_LONG_EDGE = 1280
+
+
+_DETECTOR: cv2.FaceDetectorYN | None = None
+
+
+def _detector(w: int, h: int) -> cv2.FaceDetectorYN:
+    """Cached detector. Reuses one ONNX backend across calls and just
+    flips the input size — rebuilding per call leaks memory in the
+    OpenCV DNN runtime, which is what OOM'd a 2GB box earlier."""
+    global _DETECTOR
+    if _DETECTOR is None:
+        if not _MODEL_PATH.exists():
+            raise FileNotFoundError(
+                f"YuNet model missing at {_MODEL_PATH}. Re-deploy the "
+                f"backend or fetch it from opencv_zoo."
+            )
+        _DETECTOR = cv2.FaceDetectorYN_create(
+            str(_MODEL_PATH),
+            "",
+            (w, h),
+            score_threshold=_SCORE_THRESHOLD,
+            nms_threshold=_NMS_THRESHOLD,
+            top_k=20,
+        )
+    else:
+        _DETECTOR.setInputSize((w, h))
+    return _DETECTOR
 
 
 def _min_face_side(img_w: int, img_h: int) -> int:
     short_side = min(img_w, img_h)
     return max(90, int(short_side * 0.06))
-
-
-def _detector_for(w: int, h: int) -> cv2.FaceDetectorYN:
-    """Build a fresh detector configured for these image dims.
-
-    YuNet bakes the input size into the detector instance; cheaper to
-    re-create than to call setInputSize on every call, and the model
-    XML/ONNX load itself is fast (cached by OpenCV under the hood).
-    """
-    if not _MODEL_PATH.exists():
-        raise FileNotFoundError(
-            f"YuNet model missing at {_MODEL_PATH}. Re-deploy the backend "
-            f"or fetch it from opencv_zoo."
-        )
-    return cv2.FaceDetectorYN_create(
-        str(_MODEL_PATH),
-        "",
-        (w, h),
-        score_threshold=_SCORE_THRESHOLD,
-        nms_threshold=_NMS_THRESHOLD,
-        top_k=20,
-    )
 
 
 @dataclass
@@ -90,27 +102,54 @@ class FaceCheck:
 
 def detect_face_in_bytes(data: bytes) -> FaceCheck:
     """Run YuNet on raw image bytes. Resilient: returns a FaceCheck
-    with `error` set instead of raising on decode failures."""
+    with `error` set instead of raising on decode failures.
+
+    Resizes the input so the long edge is ≤ _MAX_LONG_EDGE before
+    inference. Detected boxes are scaled back to the original image's
+    coords. Face-size gating uses the ORIGINAL dimensions so a tiny
+    background face in a 4K shot still gets rejected the same way
+    it would at full res.
+    """
     try:
         with Image.open(BytesIO(data)) as pil:
             pil = pil.convert("RGB")
-            arr = np.array(pil)
+            orig_w, orig_h = pil.size
+            long_edge = max(orig_w, orig_h)
+            if long_edge > _MAX_LONG_EDGE:
+                scale = _MAX_LONG_EDGE / long_edge
+                small = pil.resize(
+                    (max(1, int(orig_w * scale)), max(1, int(orig_h * scale))),
+                    Image.BILINEAR,
+                )
+            else:
+                scale = 1.0
+                small = pil
+            arr = np.array(small)
     except (UnidentifiedImageError, OSError) as exc:
         return FaceCheck(False, 0, None, error=f"decode failed: {exc}")
 
-    img_h, img_w = arr.shape[:2]
-    # OpenCV wants BGR.
-    bgr = arr[:, :, ::-1].copy()
+    inf_h, inf_w = arr.shape[:2]
+    # OpenCV wants BGR. Reverse on axis 2 produces a view; .copy() to
+    # force a contiguous C-order array for the ONNX call.
+    bgr = np.ascontiguousarray(arr[:, :, ::-1])
 
-    det = _detector_for(img_w, img_h)
+    det = _detector(inf_w, inf_h)
     _, faces = det.detect(bgr)
+    # Help the GC drop the big arrays before the next iteration —
+    # without this, RSS climbs steadily across thousands of calls.
+    del arr, bgr
     if faces is None or len(faces) == 0:
         return FaceCheck(False, 0, None)
 
-    min_side = _min_face_side(img_w, img_h)
+    min_side = _min_face_side(orig_w, orig_h)
+    inv = 1.0 / scale if scale != 0 else 1.0
     qualifying: list[tuple[int, int, int, int, float]] = []
     for f in faces:
-        x, y, fw, fh = (int(v) for v in f[:4])
+        # Scale the inference-resolution box back to original coords.
+        x = int(f[0] * inv)
+        y = int(f[1] * inv)
+        fw = int(f[2] * inv)
+        fh = int(f[3] * inv)
         score = float(f[-1])
         if fw < min_side or fh < min_side:
             continue
