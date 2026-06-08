@@ -37,8 +37,10 @@ def main() -> None:
                    help="Re-scan rows whose previous result was False.")
     p.add_argument("--hero-eligible-only", action="store_true",
                    help="Only scan rows already flagged is_hero_eligible.")
-    p.add_argument("--sleep-ms", type=int, default=150,
-                   help="Pause between fetches; polite to image hosts.")
+    p.add_argument("--sleep-ms", type=int, default=600,
+                   help="Pause between fetches; polite to image hosts. "
+                        "Wikimedia's bot detector 429s us at <300ms, "
+                        "so default is conservative.")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args()
 

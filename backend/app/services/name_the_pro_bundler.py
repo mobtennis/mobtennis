@@ -41,15 +41,17 @@ log = logging.getLogger(__name__)
 
 IMAGES_PER_SET = 5
 
-# Tier ranges (inclusive). Mix shapes the round so the operator
-# gets one familiar headliner per set + four discovery rows.
+# Tier ranges (inclusive). Mix shapes the round so each set has
+# one familiar headliner + four discovery rows. We treat ranks
+# 51-300 as one "deep" bucket because the face-detection pool
+# below rank 150 is currently thin — collapsing the two avoids
+# the bundler stalling out when one sub-bucket is empty.
 TIERS = {
     "top10": (1, 10),
     "high_mid": (11, 50),
-    "low_mid": (51, 150),
-    "low": (151, 300),
+    "deep": (51, 300),
 }
-TIER_QUOTAS = {"top10": 1, "high_mid": 2, "low_mid": 1, "low": 1}
+TIER_QUOTAS = {"top10": 1, "high_mid": 2, "deep": 2}
 
 
 def _next_publish_date(session: Session) -> date:
@@ -169,7 +171,12 @@ def _eligible_pool(
         select(PlayerImage, Player)
         .join(Player, Player.id == PlayerImage.player_id)
         .where(
-            PlayerImage.is_hero_eligible == True,  # noqa: E712
+            # Deliberately NOT filtering on is_hero_eligible: that
+            # flag picks landscape action shots for the player-page
+            # hero band. NTP wants the opposite — a clean portrait
+            # where the face is obviously the subject. Most rows
+            # are not hero_eligible, so requiring it leaves the
+            # picker with almost nothing to draw from.
             PlayerImage.is_hidden == False,        # noqa: E712
             # NTP-specific: only photos where YuNet found a face of
             # usable size. Photos with face_detected==None (not yet

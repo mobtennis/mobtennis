@@ -169,11 +169,25 @@ def detect_face_at_url(url: str, timeout_s: float = 15.0) -> FaceCheck:
         r = httpx.get(
             url,
             timeout=timeout_s,
-            # Wikimedia rate-limits anonymous bot-like clients hard;
-            # a polite UA + email matches our existing enricher style.
-            headers={"User-Agent": "mob.tennis face-detect/0.1 (atli@gangverk.is)"},
+            # Wikimedia treats UA-less or generic-UA clients as bots
+            # and 429s aggressively. Their guidance is to send a
+            # descriptive UA with contact info AND an Api-User-Agent
+            # header — see https://meta.wikimedia.org/wiki/User-Agent_policy
+            headers={
+                "User-Agent": "mob.tennis face-detect/0.1 (https://mob.tennis; atli@gangverk.is) httpx",
+                "Api-User-Agent": "mob.tennis/0.1 (atli@gangverk.is)",
+                "Accept": "image/*",
+            },
             follow_redirects=True,
         )
+        # Honour Retry-After when the upload host throttles us. Caller
+        # can decide to retry; we surface the wait suggestion via the
+        # error string so a noisy batch run notices the pattern.
+        if r.status_code == 429:
+            return FaceCheck(
+                False, 0, None,
+                error=f"rate-limited (retry-after={r.headers.get('Retry-After', '?')})",
+            )
         r.raise_for_status()
     except httpx.HTTPError as exc:
         return FaceCheck(False, 0, None, error=f"fetch failed: {exc}")
