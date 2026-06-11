@@ -131,12 +131,49 @@ def topup_short_sets(
     return placed
 
 
+def evict_uninpainted_from_sets(session: Session) -> int:
+    """Detach any un-inpainted image from its set so the set can be
+    topped up with a clean image from the pool.
+
+    A set with even one un-inpainted image is hidden by the public
+    filter — that's the right safety default, but it means a single
+    image still waiting on Replicate keeps the whole round dark.
+    Eviction sends the un-inpainted image back to the pool (preserving
+    its ball calibration); a subsequent topup pulls an inpainted
+    replacement.
+
+    Idempotent. Returns the number of images evicted.
+    """
+    rows = session.exec(
+        select(SpotTheBallImage).where(
+            SpotTheBallImage.set_id.is_not(None),
+            SpotTheBallImage.is_inpainted == False,  # noqa: E712
+        )
+    ).all()
+    for img in rows:
+        log.info(
+            "evicting un-inpainted image %d from set %d (pos %s)",
+            img.id, img.set_id, img.position,
+        )
+        img.set_id = None
+        img.position = None
+        session.add(img)
+    if rows:
+        session.commit()
+    return len(rows)
+
+
 def bundle_pool(session: Session, rng: random.Random | None = None) -> list[SpotTheBallSet]:
-    """Refill short sets first, then form as many new sets-of-5 as
-    the remaining pool allows.
+    """Evict un-inpainted blockers, refill short sets, then form as
+    many new sets-of-5 as the remaining pool allows.
     """
     if rng is None:
         rng = random.Random()
+
+    # Repair: un-inpainted images blocking otherwise-complete sets
+    # get evicted back to the pool. The set is now short and the
+    # next step refills it.
+    evict_uninpainted_from_sets(session)
 
     # Top up existing short sets first so admin-removed slots refill
     # before we burn pool variety on new sets.
