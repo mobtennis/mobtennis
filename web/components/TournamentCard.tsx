@@ -23,7 +23,18 @@ const CATEGORY_BADGE: Record<string, { label: string; cls: string }> = {
   itf: { label: "ITF", cls: "bg-ink-800 text-text-secondary border-ink-700" },
 };
 
-export function TournamentCard({ t, dense = false }: { t: IndexTournament; dense?: boolean }) {
+export function TournamentCard({
+  t,
+  dense = false,
+  showPhase = false,
+}: {
+  t: IndexTournament;
+  dense?: boolean;
+  /** Render "(Qualifying)" alongside the name when t.phase is set.
+   *  Opt-in because the tournaments listing intentionally hides it —
+   *  only the live page surfaces phase. */
+  showPhase?: boolean;
+}) {
   const badge = CATEGORY_BADGE[t.category];
   const dateLine = formatRange(t.start_date, t.end_date);
   const { tour: preferred } = usePreferredTour();
@@ -46,7 +57,7 @@ export function TournamentCard({ t, dense = false }: { t: IndexTournament; dense
           )}
           <span className="truncate text-sm font-semibold">
             {t.name}
-            {t.phase === "qualifying" && (
+            {showPhase && t.phase === "qualifying" && (
               <span className="ml-1.5 text-text-muted font-medium">(Qualifying)</span>
             )}
           </span>

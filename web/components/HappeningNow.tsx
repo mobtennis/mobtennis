@@ -137,7 +137,7 @@ function OngoingTournamentBlock({
   const total = liveMatches.length + upcomingMatches.length;
   // No live AND no upcoming-to-show: just the card. Only reachable for
   // big tournaments (the non-big "no live" case bails out earlier).
-  if (total === 0) return <TournamentCard t={tournament} />;
+  if (total === 0) return <TournamentCard t={tournament} showPhase />;
 
   const href = `/tournaments/${tournament.tour}/${tournament.slug}`;
 
