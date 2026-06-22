@@ -44,7 +44,12 @@ export function TournamentCard({ t, dense = false }: { t: IndexTournament; dense
               {badge.label}
             </span>
           )}
-          <span className="truncate text-sm font-semibold">{t.name}</span>
+          <span className="truncate text-sm font-semibold">
+            {t.name}
+            {t.phase === "qualifying" && (
+              <span className="ml-1.5 text-text-muted font-medium">(Qualifying)</span>
+            )}
+          </span>
           <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-text-muted">
             {(t.tours.length > 1 ? t.tours : [t.tour]).join(" · ")}
           </span>

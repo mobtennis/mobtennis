@@ -147,7 +147,12 @@ function OngoingTournamentBlock({
         href={href}
         className="flex items-center justify-between border-b border-ink-700 bg-ink-800/60 px-3 py-2 hover:bg-ink-800"
       >
-        <span className="truncate text-sm font-semibold">{tournament.name}</span>
+        <span className="truncate text-sm font-semibold">
+          {tournament.name}
+          {tournament.phase === "qualifying" && (
+            <span className="ml-1.5 text-text-muted font-medium">(Qualifying)</span>
+          )}
+        </span>
         <span className="shrink-0 text-[11px] font-semibold text-text-muted">
           {liveMatches.length > 0
             ? `${liveMatches.length} live`

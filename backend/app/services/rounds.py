@@ -57,6 +57,31 @@ def round_abbrev(round_str: str | None) -> str:
     return _ROUND_ABBREV.get(tail.lower(), tail)
 
 
+# Tokens that unambiguously mean a qualifying-bracket round. The
+# verbose-final-collision issue called out elsewhere in this module
+# (api-tennis labels qualifying-bracket finals as "- Final" same as
+# main-draw finals) is NOT relevant here — we only care whether the
+# round string starts with a qualifying marker like "Qualifying 1"
+# or "Q3". Main-draw rounds never carry these prefixes.
+_QUALIFYING_TOKENS = (
+    "qualifying",
+    "qualification",
+    "qualifier",  # "ATP Wimbledon - Qualifiers" variant
+    "q1", "q2", "q3", "q4",
+)
+
+
+def is_qualifying_round(round_str: str | None) -> bool:
+    """True if the round string represents a match in the qualifying
+    bracket — used by the tournament index to label a tournament as
+    "in qualifying phase" when every running match is a Q-round.
+    """
+    if not round_str:
+        return False
+    tail = _strip_prefix(round_str).strip().lower()
+    return any(tail.startswith(tok) for tok in _QUALIFYING_TOKENS)
+
+
 def select_deepest_match(matches):
     """Pick the match representing the deepest round a player reached,
     avoiding the qualifying-bracket conflation that plagues api-tennis

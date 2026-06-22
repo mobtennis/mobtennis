@@ -393,6 +393,10 @@ export type IndexTournament = {
   today_count: number;
   is_in_progress: boolean;
   tours: string[];
+  /** Current bracket phase. Only set when every live + today match
+   *  at this tournament is in the qualifying bracket — main-draw
+   *  matches appearing on the schedule clear it. */
+  phase?: "qualifying" | null;
 };
 
 export type DigestSummary = {

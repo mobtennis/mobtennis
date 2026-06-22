@@ -21,7 +21,7 @@ from app.schemas.history import (
 from app.schemas.match import MatchSummary
 from app.schemas.tournament import TournamentDetail, TournamentSummary
 from app.services.categorize import tier_weight
-from app.services.rounds import round_depth
+from app.services.rounds import is_qualifying_round, round_depth
 from app.services.tournament_resolver import BRAND_ALIASES
 
 # Inverted alias map — built once at module load. URL handlers consult
@@ -82,6 +82,13 @@ class IndexTournament(BaseModel):
     # All tours that share this brand at the same tier-pair (e.g. ATP+WTA Slams).
     # `tour` above is the primary; `tours` lets the client pick by user preference.
     tours: list[str] = []
+    # Current bracket phase — only set when every live + today match at
+    # this tournament is a qualifying-round match (e.g. Wimbledon during
+    # qualifying week). Frontend renders "(Qualifying)" next to the name.
+    # Drops back to null the moment any main-draw match shows up in the
+    # schedule, so the label disappears on its own once the main draw
+    # is on the calendar.
+    phase: str | None = None
     # Description blurbs are intentionally NOT included here — at ~150–500 chars
     # × every tournament in the catalog, they push the index response past 2 MB
     # and break Next.js ISR caching. The detail endpoint serves the full blurb
@@ -180,6 +187,15 @@ def _collapse_joint_brands(items: list[IndexTournament]) -> list[IndexTournament
         primary.today_count = sum(x.today_count for x in group)
         primary.is_in_progress = any(x.is_in_progress for x in group)
         primary.tours = sorted({x.tour.value for x in group})
+        # Phase only carries through if EVERY side of the joint brand
+        # is in the same phase. At a Slam, ATP qualifying typically
+        # finishes a day before WTA's — once one side has main-draw
+        # matches scheduled, the whole brand stops being "qualifying".
+        phases = {x.phase for x in group if x.phase is not None}
+        if len(phases) == 1 and all(x.phase is not None for x in group):
+            primary.phase = phases.pop()
+        else:
+            primary.phase = None
         out.append(primary)
     return out
 
@@ -218,6 +234,30 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
             .group_by(Match.tournament_id)
         ).all()
     )
+
+    # Phase detection. A tournament is "qualifying" iff every live + today
+    # match it has is a qualifying-bracket round. Pulled as a single query
+    # over the same window the counts use; we group rounds in Python because
+    # SQL aggregation on string-pattern matching gets ugly across dialects.
+    phase_rounds: dict[int, list[str]] = defaultdict(list)
+    phase_rows = session.exec(
+        select(Match.tournament_id, Match.round, Match.status, Match.scheduled_at)
+        .where(
+            (Match.status.in_([MatchStatus.LIVE, MatchStatus.SUSPENDED]))
+            | (
+                (Match.scheduled_at >= today_start)
+                & (Match.scheduled_at <= today_end)
+            )
+        )
+    ).all()
+    for tid, round_str, _status, _sched in phase_rows:
+        if tid is None:
+            continue
+        phase_rounds[tid].append(round_str or "")
+    tournament_phase: dict[int, str] = {}
+    for tid, rounds in phase_rounds.items():
+        if rounds and all(is_qualifying_round(r) for r in rounds):
+            tournament_phase[tid] = "qualifying"
 
     # "In progress" needs to be robust — Rome was disappearing from the live
     # section despite being mid-tournament because the original logic relied
@@ -343,6 +383,7 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
             today_count=today_counts.get(t.id, 0),
             is_in_progress=t.id in in_progress_ids,
             tours=[t.tour.value],
+            phase=tournament_phase.get(t.id),
         )
 
     items = [to_index(t) for t in by_series.values()]
