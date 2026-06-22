@@ -235,13 +235,22 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
         ).all()
     )
 
-    # Phase detection. A tournament is "qualifying" iff every live + today
-    # match it has is a qualifying-bracket round. Pulled as a single query
-    # over the same window the counts use; we group rounds in Python because
-    # SQL aggregation on string-pattern matching gets ugly across dialects.
+    # Phase detection. A tournament is "qualifying" if EITHER:
+    #   (a) every live + today match string explicitly says so
+    #       (Q1, Qualifying 2, etc.), OR
+    #   (b) the tournament has live/today matches but today is still
+    #       before its formal start_date — characteristic of the
+    #       Grand Slams where qualifying happens at a satellite venue
+    #       the week before. We have to handle (b) separately because
+    #       api-tennis mislabels Wimbledon qualifying rounds as e.g.
+    #       "ATP Wimbledon - Quarter-finals" (the qualifying bracket's
+    #       own QF, not the main draw's). round-string detection on
+    #       its own can't catch that case, but a slam's start_date is
+    #       authoritative.
+    has_active_match: set[int] = set()
     phase_rounds: dict[int, list[str]] = defaultdict(list)
     phase_rows = session.exec(
-        select(Match.tournament_id, Match.round, Match.status, Match.scheduled_at)
+        select(Match.tournament_id, Match.round)
         .where(
             (Match.status.in_([MatchStatus.LIVE, MatchStatus.SUSPENDED]))
             | (
@@ -250,14 +259,26 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
             )
         )
     ).all()
-    for tid, round_str, _status, _sched in phase_rows:
+    for tid, round_str in phase_rows:
         if tid is None:
             continue
+        has_active_match.add(tid)
         phase_rounds[tid].append(round_str or "")
+    # start_date < today gating for case (b) — only consider tournaments
+    # with a known start date strictly in the future.
+    pre_start_ids = {
+        tid for tid, sd in session.exec(
+            select(Tournament.id, Tournament.start_date)
+            .where(Tournament.start_date.is_not(None))
+            .where(Tournament.start_date > today)
+        ).all()
+    } & has_active_match
     tournament_phase: dict[int, str] = {}
     for tid, rounds in phase_rounds.items():
         if rounds and all(is_qualifying_round(r) for r in rounds):
             tournament_phase[tid] = "qualifying"
+    for tid in pre_start_ids:
+        tournament_phase[tid] = "qualifying"
 
     # "In progress" needs to be robust — Rome was disappearing from the live
     # section despite being mid-tournament because the original logic relied
