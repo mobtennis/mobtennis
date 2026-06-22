@@ -187,15 +187,14 @@ def _collapse_joint_brands(items: list[IndexTournament]) -> list[IndexTournament
         primary.today_count = sum(x.today_count for x in group)
         primary.is_in_progress = any(x.is_in_progress for x in group)
         primary.tours = sorted({x.tour.value for x in group})
-        # Phase only carries through if EVERY side of the joint brand
-        # is in the same phase. At a Slam, ATP qualifying typically
-        # finishes a day before WTA's — once one side has main-draw
-        # matches scheduled, the whole brand stops being "qualifying".
+        # Phase: if any side of the joint brand reports qualifying,
+        # the whole brand carries it. Sides with no matches at all
+        # this week (e.g. WTA Wimbledon hasn't been put on the
+        # schedule yet while ATP is mid-qualifying) report phase=None
+        # because there's no data to judge from — they shouldn't
+        # veto the active side's signal.
         phases = {x.phase for x in group if x.phase is not None}
-        if len(phases) == 1 and all(x.phase is not None for x in group):
-            primary.phase = phases.pop()
-        else:
-            primary.phase = None
+        primary.phase = phases.pop() if phases else None
         out.append(primary)
     return out
 
