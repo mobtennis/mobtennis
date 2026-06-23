@@ -103,6 +103,10 @@ _LICENSE_ALLOW_SUBSTRINGS = (
 _FILENAME_DENY = (
     "signature", "logo", "flag_of_", "coat_of_arms",
     ".svg", ".gif",
+    # Audio / video / docs — turn up in Commons search hits even when
+    # filtered to namespace 6 (e.g. pronunciation .wav files filed
+    # under a player's name). Image-only file types pass through.
+    ".wav", ".ogg", ".oga", ".mp3", ".webm", ".mp4", ".mov", ".pdf",
 )
 
 # Filename markers that signal an image is a tight portrait crop, not
@@ -251,6 +255,52 @@ def _get_article_image_filenames(
     out: list[str] = []
     for img in images:
         t = img.get("title", "")
+        if t.startswith("File:"):
+            out.append(t[5:])
+    return out
+
+
+def _search_commons_by_player_name(
+    client: httpx.Client, player_name: str, limit: int = 100,
+) -> list[str]:
+    """Files on Commons whose title contains the player's name.
+
+    The category-driven discovery in `_get_commons_category_files`
+    only finds images filed under `Category:<Player Name>`. Lots of
+    great action shots from official tournament photographers don't
+    end up in the per-player category — they live in
+    `Category:2025 Wimbledon Championships` etc., and the only way
+    we'd discover them through the existing crawl is to walk every
+    tournament-edition category (slow + noisy).
+
+    This full-text search uses `intitle:"<name>"` to require the
+    player's name in the FILE TITLE — typical pattern is
+    "2024 Roland Garros — Carlos Alcaraz forehand.jpg" — which is a
+    strong signal that the file is actually of that player. False
+    positives are mitigated downstream by the size, license, and
+    hero-eligibility filters; the worst-case is an operator skip.
+
+    Returns up to `limit` filenames (without "File:" prefix).
+    """
+    r = _polite_get(
+        client, COMMONS_API,
+        params={
+            "action": "query", "list": "search",
+            # intitle: requires the phrase in the title, exact-match
+            # quoting handles two-word names like "Iga Świątek".
+            "srsearch": f'intitle:"{player_name}"',
+            # File namespace only — skip article descriptions.
+            "srnamespace": "6",
+            "srlimit": str(limit),
+            "format": "json",
+        },
+    )
+    if r is None or r.status_code != 200:
+        return []
+    hits = r.json().get("query", {}).get("search", []) or []
+    out: list[str] = []
+    for h in hits:
+        t = h.get("title", "")
         if t.startswith("File:"):
             out.append(t[5:])
     return out
@@ -557,6 +607,22 @@ def enrich_one(session: Session, player: Player, client: httpx.Client) -> int:
         except httpx.HTTPError:
             commons_files = []
         for fn in commons_files:
+            _add_filename(fn, "commons")
+
+    # 4. Commons full-text search by player name. Picks up tournament-
+    # edition category files like "2025 Roland Garros - Carlos Alcaraz
+    # forehand.jpg" that aren't filed under the per-player category.
+    # Largest yield of action shots for upper-tier players; for deep
+    # tour names it returns 0-5 hits which is fine — the existing
+    # sources already cover them.
+    if player.full_name:
+        try:
+            search_files = _search_commons_by_player_name(
+                client, player.full_name,
+            )
+        except httpx.HTTPError:
+            search_files = []
+        for fn in search_files:
             _add_filename(fn, "commons")
 
     _sync_primary_pointer(session, player)
