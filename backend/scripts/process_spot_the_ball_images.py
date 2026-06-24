@@ -164,6 +164,7 @@ def _scp_to_prod(local_path: Path, image_id: int) -> None:
     at https://api.mob.tennis/spot-the-ball/{id}.jpg, so once this
     lands the public URL is reachable. Idempotent — scp overwrites.
     """
+    log.info("  uploading to %s:%s/%d.jpg", PROD_HOST, PROD_ASSET_DIR, image_id)
     # We use a relay through sudo-as-tennismob so the file ends up
     # owned by the same user Caddy + the FastAPI app run as.
     cmd_mkdir = [
@@ -187,6 +188,7 @@ def _scp_to_prod(local_path: Path, image_id: int) -> None:
         ],
         check=True, capture_output=True, text=True,
     )
+    log.info("  uploaded ✓")
 
 
 def _prod_update(image_id: int, new_image_url: str) -> None:
