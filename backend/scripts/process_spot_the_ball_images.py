@@ -32,7 +32,16 @@ log = logging.getLogger("process_stb")
 API_BASE = "https://api.mob.tennis"
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# Local staging dir for the JPGs before scp to prod. Kept in the repo
+# root rather than a temp dir so failed runs leave inspectable
+# artifacts (and a repeat-after-fix doesn't have to re-pay Replicate).
+# Git ignores this path — see web/.gitignore.
 OUT_DIR = REPO_ROOT / "web" / "public" / "spot-the-ball"
+
+# Where the inpainted JPGs land on the Lightsail box. Caddy serves
+# this directory at https://api.mob.tennis/spot-the-ball/{id}.jpg.
+PROD_HOST = "mobtennis-ubuntu"
+PROD_ASSET_DIR = "/opt/tennismob/data/spot-the-ball"
 
 # Mask radius (px at 960px source width) bumps 20% per attempt so a
 # rejected inpaint gets a fatter mask on retry — gives the model more
@@ -150,6 +159,36 @@ def _fetch_pool() -> list[dict]:
     return list(data.get("images_needing_inpaint", []))
 
 
+def _scp_to_prod(local_path: Path, image_id: int) -> None:
+    """Copy the inpainted JPG to the box. Caddy serves the directory
+    at https://api.mob.tennis/spot-the-ball/{id}.jpg, so once this
+    lands the public URL is reachable. Idempotent — scp overwrites.
+    """
+    # We use a relay through sudo-as-tennismob so the file ends up
+    # owned by the same user Caddy + the FastAPI app run as.
+    cmd_mkdir = [
+        "ssh", PROD_HOST,
+        f"sudo -u tennismob mkdir -p {PROD_ASSET_DIR}",
+    ]
+    subprocess.run(cmd_mkdir, check=True, capture_output=True, text=True)
+
+    # scp can't write directly as another user; stage in /tmp, then mv.
+    remote_staging = f"/tmp/stb-{image_id}.jpg"
+    subprocess.run(
+        ["scp", "-q", str(local_path), f"{PROD_HOST}:{remote_staging}"],
+        check=True, capture_output=True, text=True,
+    )
+    subprocess.run(
+        [
+            "ssh", PROD_HOST,
+            f"sudo install -o tennismob -g tennismob -m 644 "
+            f"{remote_staging} {PROD_ASSET_DIR}/{image_id}.jpg "
+            f"&& rm -f {remote_staging}",
+        ],
+        check=True, capture_output=True, text=True,
+    )
+
+
 def _prod_update(image_id: int, new_image_url: str) -> None:
     """SSH into prod: flip is_inpainted=True, update image_url to local,
     increment inpaint_attempts."""
@@ -183,8 +222,10 @@ def main() -> None:
         help="Process a single image by id (default: walk the whole pool).",
     )
     parser.add_argument(
-        "--public-base", default="https://mob.tennis",
-        help="Public origin where /spot-the-ball/{id}.jpg is served.",
+        "--public-base", default=API_BASE,
+        help="Public origin where /spot-the-ball/{id}.jpg is served. "
+             "Defaults to api.mob.tennis — Caddy on the Lightsail box "
+             "serves the directory directly, so no Vercel deploy needed.",
     )
     args = parser.parse_args()
 
@@ -215,6 +256,11 @@ def main() -> None:
         out_path = OUT_DIR / f"{img_id}.jpg"
         edited.save(out_path, "JPEG", quality=90)
         log.info("  wrote %s (%d KB)", out_path, out_path.stat().st_size // 1024)
+        try:
+            _scp_to_prod(out_path, img_id)
+        except subprocess.CalledProcessError as e:
+            log.error("  scp to prod failed: %s", e.stderr or e.stdout)
+            continue
         new_url = f"{args.public_base}/spot-the-ball/{img_id}.jpg"
         _prod_update(img_id, new_url)
 

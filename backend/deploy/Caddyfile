@@ -13,6 +13,19 @@ api.mob.tennis {
         flush_interval -1
     }
 
+    # Spot the Ball static asset hosting. The inpaint pipeline writes
+    # post-Replicate JPGs straight to /opt/tennismob/data/spot-the-ball/
+    # on this box (via scp from the operator's laptop). Previously these
+    # lived in web/public/ and were served by Vercel, but committing
+    # binaries to git just to deploy them was tedious and fragile —
+    # easy to forget the commit and ship 404s. Caddy serves them now,
+    # so the inpaint script can end-to-end without a separate deploy.
+    handle_path /spot-the-ball/* {
+        root * /opt/tennismob/data/spot-the-ball
+        file_server
+        header Cache-Control "public, max-age=31536000, immutable"
+    }
+
     reverse_proxy 127.0.0.1:8000
 
     # Reasonable defaults; tighten if/when we add a CSP.

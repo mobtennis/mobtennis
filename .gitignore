@@ -24,6 +24,12 @@ data/*.db-wal
 data/*.db-shm
 data/raw/
 
+# Spot the Ball inpainted output. The inpaint script writes here as
+# a local staging copy before scp'ing to the Lightsail box, which
+# serves the files at api.mob.tennis/spot-the-ball/. They aren't
+# part of the Vercel build any more.
+web/public/spot-the-ball/
+
 # Env
 .env
 .env.local
