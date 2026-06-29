@@ -120,10 +120,20 @@ export default async function TournamentPage({ params }: { params: Params }) {
   const startMs = tournament.start_date
     ? parseUtcIso(tournament.start_date).getTime()
     : null;
+  // A tournament can't be "future" while it has live or scheduled
+  // matches loaded — even if the stored start_date is in the future.
+  // Wimbledon 2026 was hitting this: start_date=2026-06-30 from
+  // Wikipedia (the traditional Monday Day 1) but R128 matches were
+  // already on the schedule for Sunday 06-29. The Countdown widget
+  // saying "starts tomorrow" while the bracket page already showed
+  // live R128 results was obvious cognitive dissonance.
+  const hasLoadedSchedule = live.length > 0 || upcoming.length > 0;
   const isFutureEdition =
-    startMs !== null
-      ? startMs > Date.now()
-      : tournament.year > new Date().getFullYear();
+    !hasLoadedSchedule && (
+      startMs !== null
+        ? startMs > Date.now()
+        : tournament.year > new Date().getFullYear()
+    );
 
   const mainDrawMatches = matches.filter(
     (m) =>
