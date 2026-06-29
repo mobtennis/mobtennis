@@ -21,7 +21,11 @@ from app.schemas.history import (
 from app.schemas.match import MatchSummary
 from app.schemas.tournament import TournamentDetail, TournamentSummary
 from app.services.categorize import tier_weight
-from app.services.rounds import is_qualifying_round, round_depth
+from app.services.rounds import (
+    is_main_draw_short_code,
+    is_qualifying_round,
+    round_depth,
+)
 from app.services.tournament_resolver import BRAND_ALIASES
 
 # Inverted alias map — built once at module load. URL handlers consult
@@ -272,11 +276,21 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
             .where(Tournament.start_date > today)
         ).all()
     } & has_active_match
+    # Authoritative "main draw is underway" signal: an R128/R64/.../F
+    # short code in today's rounds. Only the bracket parsers emit
+    # those — api-tennis stays verbose — so seeing one means main
+    # draw R1 (or later) has matches on the schedule, which overrules
+    # the pre-start-date inference. Catches the Wimbledon case where
+    # the stored start_date is one day later than the actual Day 1.
+    main_draw_active_ids = {
+        tid for tid, rounds in phase_rounds.items()
+        if any(is_main_draw_short_code(r) for r in rounds)
+    }
     tournament_phase: dict[int, str] = {}
     for tid, rounds in phase_rounds.items():
         if rounds and all(is_qualifying_round(r) for r in rounds):
             tournament_phase[tid] = "qualifying"
-    for tid in pre_start_ids:
+    for tid in pre_start_ids - main_draw_active_ids:
         tournament_phase[tid] = "qualifying"
 
     # "In progress" needs to be robust — Rome was disappearing from the live

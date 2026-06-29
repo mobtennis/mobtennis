@@ -82,6 +82,26 @@ def is_qualifying_round(round_str: str | None) -> bool:
     return any(tail.startswith(tok) for tok in _QUALIFYING_TOKENS)
 
 
+# Short-code rounds that ONLY get emitted for main-draw matches.
+# Our Sackmann + Wikipedia bracket parsers use these; api-tennis only
+# emits verbose labels (which conflate qualifying with main draw).
+# An R128/R64/etc. in the data is an authoritative "main draw is
+# underway" signal — useful when the tournament's start_date is one
+# day off (e.g. Wimbledon 2026 stored as 06-30 but Day 1 was 06-29).
+_MAIN_DRAW_SHORT_CODES = frozenset({
+    "r256", "r128", "r64", "r32", "r16", "qf", "sf", "f",
+})
+
+
+def is_main_draw_short_code(round_str: str | None) -> bool:
+    """True if the round string is one of our unambiguous main-draw
+    short codes. Authoritative — only the main-draw parsers emit
+    these, qualifying records are always verbose."""
+    if not round_str:
+        return False
+    return round_str.strip().lower() in _MAIN_DRAW_SHORT_CODES
+
+
 def select_deepest_match(matches):
     """Pick the match representing the deepest round a player reached,
     avoiding the qualifying-bracket conflation that plagues api-tennis
