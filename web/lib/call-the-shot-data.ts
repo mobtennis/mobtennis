@@ -30,36 +30,39 @@ export type CallTheShotItem = {
 };
 
 export const CALL_THE_SHOT_ITEMS: CallTheShotItem[] = [
-  // TODO(atli): replace these placeholders with real highlight clips.
-  // The video_id below is a generic Rick Astley as a smoke-test fill —
-  // the embed will load but the pause point is meaningless. Use it to
-  // verify the UI flow, then swap in real tennis clips.
+  // Real Wimbledon 2025 highlights from the official Wimbledon channel.
+  // Pause timestamps and correct_index are FIRST PASS — needs the
+  // operator to scrub each video, find a rally just before a winning
+  // shot, and adjust pause_at_s + correct_index. The video_id and
+  // caption are correct.
   {
-    id: "demo-1",
-    video_id: "dQw4w9WgXcQ",
-    pause_at_s: 25,
+    id: "wim-2025-men-final",
+    video_id: "eRbTHj2KLro",
+    pause_at_s: 45,  // TODO: scrub to a rally just before a winner
     resume_for_s: 6,
-    caption: "Sinner vs Alcaraz · placeholder",
+    caption: "Sinner vs Alcaraz · Wimbledon 2025 final",
     options: [
-      "Cross-court winner",
       "Down the line",
+      "Cross-court winner",
       "Drop shot",
       "Lob",
     ],
-    correct_index: 1,
+    correct_index: 1,  // TODO: verify against the actual shot at pause_at_s
+    source_url: "https://www.youtube.com/watch?v=eRbTHj2KLro",
   },
   {
-    id: "demo-2",
-    video_id: "dQw4w9WgXcQ",
-    pause_at_s: 60,
+    id: "wim-2025-women-final",
+    video_id: "X4dVyRyY7TY",
+    pause_at_s: 50,  // TODO: scrub to a rally just before a winner
     resume_for_s: 6,
-    caption: "Świątek vs Sabalenka · placeholder",
+    caption: "Świątek vs Anisimova · Wimbledon 2025 final",
     options: [
       "Down the line",
       "Cross-court winner",
-      "Net cord",
       "Body serve",
+      "Drop shot",
     ],
-    correct_index: 1,
+    correct_index: 1,  // TODO: verify
+    source_url: "https://www.youtube.com/watch?v=X4dVyRyY7TY",
   },
 ];
