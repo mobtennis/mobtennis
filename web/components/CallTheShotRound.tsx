@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { CallTheShotItem } from "@/lib/call-the-shot-data";
+import { useYouTubeApiReady } from "@/lib/youtube";
 
 /**
  * Prototype Call the Shot round. Loads the YouTube IFrame Player API
@@ -37,70 +38,6 @@ type Result = {
   correct_index: number;
   is_correct: boolean;
 };
-
-declare global {
-  interface Window {
-    onYouTubeIframeAPIReady?: () => void;
-    YT?: typeof YT;
-  }
-  // Minimal slice of the YT namespace we use. The real types come from
-  // @types/youtube but we avoid that dep — surface area is small.
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace YT {
-    class Player {
-      constructor(el: string | HTMLElement, opts: PlayerOptions);
-      playVideo(): void;
-      pauseVideo(): void;
-      seekTo(s: number, allowSeekAhead: boolean): void;
-      loadVideoById(args: { videoId: string; startSeconds?: number }): void;
-      getCurrentTime(): number;
-      getPlayerState(): number;
-      destroy(): void;
-    }
-    interface PlayerOptions {
-      videoId?: string;
-      width?: number | string;
-      height?: number | string;
-      playerVars?: Record<string, string | number>;
-      events?: {
-        onReady?: (e: { target: Player }) => void;
-        onStateChange?: (e: { data: number; target: Player }) => void;
-      };
-    }
-    enum PlayerState {
-      UNSTARTED = -1, ENDED = 0, PLAYING = 1, PAUSED = 2, BUFFERING = 3, CUED = 5,
-    }
-  }
-}
-
-
-function useYouTubeApiReady(): boolean {
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.YT && (window.YT as unknown as { Player?: unknown }).Player) {
-      setReady(true);
-      return;
-    }
-    // Chain onto any existing handler so we play nicely if another
-    // component loaded the API first.
-    const prior = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => {
-      prior?.();
-      setReady(true);
-    };
-    const existing = document.querySelector<HTMLScriptElement>(
-      'script[src="https://www.youtube.com/iframe_api"]',
-    );
-    if (!existing) {
-      const s = document.createElement("script");
-      s.src = "https://www.youtube.com/iframe_api";
-      document.head.appendChild(s);
-    }
-  }, []);
-  return ready;
-}
-
 
 export function CallTheShotRound({
   items: rawItems,
