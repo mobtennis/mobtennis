@@ -1,9 +1,12 @@
+from datetime import date
+
 from pydantic import BaseModel
 
 
 class CallTheShotItemView(BaseModel):
-    """Public read shape. options_json gets decoded to a list[str]."""
+    """One playable item within a set."""
     id: int
+    position: int | None = None
     video_id: str
     start_at_s: float
     pause_at_s: float
@@ -11,6 +14,20 @@ class CallTheShotItemView(BaseModel):
     options: list[str]
     correct_index: int
     source_url: str | None = None
+
+
+class CallTheShotSetView(BaseModel):
+    id: int
+    title: str | None = None
+    publish_date: date
+    items: list[CallTheShotItemView]
+
+
+class CallTheShotArchiveItem(BaseModel):
+    id: int
+    title: str | None = None
+    publish_date: date
+    item_count: int
 
 
 class CallTheShotItemCreate(BaseModel):

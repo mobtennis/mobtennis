@@ -1,52 +1,33 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { api, type CallTheShotItem } from "@/lib/api";
+import { api, type CallTheShotSet } from "@/lib/api";
 import { CallTheShotRound } from "@/components/CallTheShotRound";
 
-export const revalidate = 60;
+export const revalidate = 300;
 
 export const metadata = {
   title: "Call the shot",
   description: "Watch the rally, predict where the next shot is going.",
 };
 
-type ApiItem = {
-  id: number;
-  video_id: string;
-  start_at_s: number;
-  pause_at_s: number;
-  caption: string;
-  options: string[];
-  correct_index: number;
-  source_url: string | null;
-};
-
 export default async function CallTheShotPage() {
-  const rows = await api<ApiItem[]>("/api/call-the-shot/items", {
-    revalidate: 60,
-  }).catch(() => [] as ApiItem[]);
-
-  if (!rows.length) notFound();
-
-  const items: CallTheShotItem[] = rows.map((r) => ({
-    id: String(r.id),
-    video_id: r.video_id,
-    start_at_s: r.start_at_s,
-    pause_at_s: r.pause_at_s,
-    caption: r.caption,
-    options: [
-      r.options[0] ?? "",
-      r.options[1] ?? "",
-      r.options[2] ?? "",
-      r.options[3] ?? "",
-    ],
-    correct_index: Math.max(0, Math.min(3, r.correct_index)) as 0 | 1 | 2 | 3,
-    source_url: r.source_url ?? undefined,
-  }));
+  const today = await api<CallTheShotSet>("/api/call-the-shot/today", {
+    revalidate: 300,
+  }).catch(() => null);
+  if (!today || today.items.length === 0) notFound();
 
   return (
     <div className="space-y-6">
-      <CallTheShotRound items={items} />
+      <CallTheShotRound set={today} />
+      <div className="flex gap-4 text-sm">
+        <Link
+          href="/play/call-the-shot/archive"
+          className="font-medium text-accent hover:text-accent-dim"
+        >
+          Past rounds →
+        </Link>
+      </div>
     </div>
   );
 }

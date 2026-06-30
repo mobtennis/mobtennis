@@ -488,6 +488,20 @@ export type CallTheShotItem = {
   source_url?: string;
 };
 
+export type CallTheShotSet = {
+  id: number;
+  title: string | null;
+  publish_date: string;
+  items: CallTheShotItem[];
+};
+
+export type CallTheShotArchiveItem = {
+  id: number;
+  title: string | null;
+  publish_date: string;
+  item_count: number;
+};
+
 export type DigestDetail = DigestSummary & {
   body_md: string;
   model_name: string;

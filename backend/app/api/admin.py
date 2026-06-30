@@ -1074,3 +1074,45 @@ def cts_delete(
     session.delete(row)
     session.commit()
     return {"deleted": item_id}
+
+
+@router.post(
+    "/call-the-shot/bundle",
+    dependencies=[Depends(_require_admin_key)],
+)
+def cts_trigger_bundle(session: Session = Depends(get_session)):
+    """Run the Call the Shot bundler — forms 5-item sets from the
+    pool of unassigned items, one per day starting today. Idempotent.
+    """
+    from app.services.call_the_shot_bundler import bundle_cts
+    sets = bundle_cts(session)
+    return {
+        "sets_created": len(sets),
+        "set_ids": [s.id for s in sets],
+        "publish_dates": [s.publish_date.isoformat() for s in sets],
+    }
+
+
+@router.post(
+    "/call-the-shot/reset",
+    dependencies=[Depends(_require_admin_key)],
+)
+def cts_reset(session: Session = Depends(get_session)):
+    """Wipe every Call the Shot set and detach items back to the
+    pool. Useful if the bundler logic changed and you want to
+    re-form sets. Items themselves survive."""
+    from app.models.call_the_shot import CallTheShotItem, CallTheShotSet
+    n_items = 0
+    for it in session.exec(
+        select(CallTheShotItem).where(CallTheShotItem.set_id.is_not(None))
+    ).all():
+        it.set_id = None
+        it.position = None
+        session.add(it)
+        n_items += 1
+    n_sets = 0
+    for s in session.exec(select(CallTheShotSet)).all():
+        session.delete(s)
+        n_sets += 1
+    session.commit()
+    return {"deleted_sets": n_sets, "detached_items": n_items}

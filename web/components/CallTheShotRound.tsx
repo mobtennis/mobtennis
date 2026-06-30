@@ -2,33 +2,27 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { CallTheShotItem } from "@/lib/api";
+import type { CallTheShotItem, CallTheShotSet } from "@/lib/api";
 import { useYouTubeApiReady } from "@/lib/youtube";
 
 /**
- * Prototype Call the Shot round. Loads the YouTube IFrame Player API
- * inline, plays each item up to its `pause_at_s`, freezes the video,
- * surfaces 4 prediction buttons. On pick, reveals the answer and
- * resumes the clip for `resume_for_s` seconds before advancing.
+ * Daily Call the Shot round. Plays through the items in a set,
+ * scores cumulatively, summary + share card at the end.
  *
- * Scope (prototype):
- *   - No localStorage round summary yet — we're feeling out whether
- *     the pause/resume rhythm even works. Add later if UX lands.
- *   - No share card.
- *   - Static items, no daily set / archive concept.
+ * Storage:
+ *   - mob:cts:set:{set_id} → completed round summary (localStorage)
  *
  * Notes:
- *   - playsinline=1 is essential or iOS hijacks to native fullscreen,
- *     which breaks our overlay + button row.
- *   - YouTube blocks unmuted autoplay on every mobile browser; the
- *     first item requires a tap to start. Subsequent items reuse the
- *     same Player instance so they can auto-cue without re-priming.
- *   - We poll currentTime every 250ms to catch the pause moment —
- *     onStateChange fires too late (only on natural state transitions)
- *     to land within a few frames of the intended timestamp.
+ *   - playsinline=1 is essential or iOS hijacks to native fullscreen.
+ *   - YouTube blocks unmuted autoplay on mobile; first item needs a
+ *     "Tap to start" gesture. Subsequent same-video items seek
+ *     instead of re-loading so the gesture grant survives.
+ *   - We poll currentTime every 50ms to catch the pause + the
+ *     next-item-start-bleed ceiling.
  */
 
 const POINTS_PER_CORRECT = 100;
+const SET_KEY_PREFIX = "mob:cts:set:";
 
 type Verdict = "pending" | "correct" | "wrong";
 
@@ -37,13 +31,37 @@ type Result = {
   picked_index: number;
   correct_index: number;
   is_correct: boolean;
+  caption?: string;
 };
 
+type RoundSummary = {
+  set_id: number;
+  results: Result[];
+  total_points: number;
+  completed_at: string;
+};
+
+
+function loadSetSummary(set_id: number): RoundSummary | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(SET_KEY_PREFIX + set_id);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSetSummary(round: RoundSummary): void {
+  localStorage.setItem(SET_KEY_PREFIX + round.set_id, JSON.stringify(round));
+}
+
 export function CallTheShotRound({
-  items: rawItems,
+  set: thisSet,
 }: {
-  items: CallTheShotItem[];
+  set: CallTheShotSet;
 }) {
+  const rawItems = thisSet.items;
   // Sort items so same-video clips play in chronological order, while
   // preserving the operator's cross-video order (first-appearance
   // index per video_id). This guarantees seekTo paths only move
@@ -60,6 +78,14 @@ export function CallTheShotRound({
       return (a.start_at_s ?? 0) - (b.start_at_s ?? 0);
     });
   }, [rawItems]);
+
+  const [savedSummary, setSavedSummary] = useState<RoundSummary | null>(null);
+  const [practice, setPractice] = useState(false);
+
+  useEffect(() => {
+    const prior = loadSetSummary(thisSet.id);
+    if (prior) setSavedSummary(prior);
+  }, [thisSet.id]);
 
   const apiReady = useYouTubeApiReady();
   const containerId = "cts-player";
@@ -173,6 +199,7 @@ export function CallTheShotRound({
         picked_index: option_index,
         correct_index: current.correct_index,
         is_correct,
+        caption: current.caption,
       },
     ]);
     // Resume the clip so the player sees how the point ended. They
@@ -195,8 +222,18 @@ export function CallTheShotRound({
 
   const advance = useCallback(() => {
     if (idx + 1 >= items.length) {
-      // Round complete. Leave the verdict state alone so the summary
-      // can render off results.
+      // Round complete. Build + persist the summary; the next render
+      // shows the share card.
+      const summary: RoundSummary = {
+        set_id: thisSet.id,
+        results,
+        total_points: results.filter((r) => r.is_correct).length * POINTS_PER_CORRECT,
+        completed_at: new Date().toISOString(),
+      };
+      if (!practice) {
+        saveSetSummary(summary);
+        setSavedSummary(summary);
+      }
       setIdx(items.length);
       return;
     }
@@ -229,27 +266,68 @@ export function CallTheShotRound({
       // is no-op until the video actually plays past pause_at_s.
       startPollForPause(nextItem.pause_at_s);
     }
-  }, [idx, items, current, startPollForPause]);
+  }, [idx, items, current, startPollForPause, results, practice, thisSet.id]);
 
   const cumulative = useMemo(
     () => results.filter((r) => r.is_correct).length * POINTS_PER_CORRECT,
     [results],
   );
 
+  if (savedSummary && !practice) {
+    return (
+      <Summary
+        summary={savedSummary}
+        items={items}
+        setId={thisSet.id}
+        onReplay={() => {
+          setPractice(true);
+          setSavedSummary(null);
+          setIdx(0); setResults([]); setVerdict("pending"); setPickedIdx(null); setPaused(false);
+          const p = playerRef.current;
+          if (p && items[0]) {
+            try {
+              p.loadVideoById({
+                videoId: items[0].video_id,
+                startSeconds: items[0].start_at_s ?? 0,
+              });
+            } catch { /* ignore */ }
+            startPollForPause(items[0].pause_at_s);
+          }
+        }}
+      />
+    );
+  }
+
   if (idx >= items.length) {
-    return <Summary results={results} items={items} onReplay={() => {
-      setIdx(0); setResults([]); setVerdict("pending"); setPickedIdx(null); setPaused(false);
-      const p = playerRef.current;
-      if (p && items[0]) {
-        try {
-          p.loadVideoById({
-            videoId: items[0].video_id,
-            startSeconds: items[0].start_at_s ?? 0,
-          });
-        } catch { /* ignore */ }
-        startPollForPause(items[0].pause_at_s);
-      }
-    }} />;
+    // Just-completed (live, before localStorage round) — build a
+    // transient summary off the in-flight results array.
+    const summary: RoundSummary = {
+      set_id: thisSet.id,
+      results,
+      total_points: results.filter((r) => r.is_correct).length * POINTS_PER_CORRECT,
+      completed_at: new Date().toISOString(),
+    };
+    return (
+      <Summary
+        summary={summary}
+        items={items}
+        setId={thisSet.id}
+        onReplay={() => {
+          setPractice(true);
+          setIdx(0); setResults([]); setVerdict("pending"); setPickedIdx(null); setPaused(false);
+          const p = playerRef.current;
+          if (p && items[0]) {
+            try {
+              p.loadVideoById({
+                videoId: items[0].video_id,
+                startSeconds: items[0].start_at_s ?? 0,
+              });
+            } catch { /* ignore */ }
+            startPollForPause(items[0].pause_at_s);
+          }
+        }}
+      />
+    );
   }
 
   if (!current) {
@@ -382,15 +460,17 @@ export function CallTheShotRound({
 
 
 function Summary({
-  results,
+  summary,
   items,
+  setId,
   onReplay,
 }: {
-  results: Result[];
+  summary: RoundSummary;
   items: CallTheShotItem[];
+  setId: number;
   onReplay: () => void;
 }) {
-  const correct = results.filter((r) => r.is_correct).length;
+  const correct = summary.results.filter((r) => r.is_correct).length;
   const max = items.length * POINTS_PER_CORRECT;
   return (
     <div className="space-y-5">
@@ -407,15 +487,17 @@ function Summary({
         </p>
       </header>
 
+      <ShareCard summary={summary} setId={setId} />
+
       <ul className="divide-y divide-ink-700 overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
-        {results.map((r) => {
+        {summary.results.map((r) => {
           const item = items.find((i) => i.id === r.item_id);
           const tone = r.is_correct ? "text-emerald-700" : "text-red-700";
           return (
             <li key={r.item_id} className="flex items-center gap-3 p-3">
               <div className="flex-1 min-w-0">
                 <div className="line-clamp-1 text-sm font-medium text-text-primary">
-                  {item?.caption ?? r.item_id}
+                  {item?.caption ?? r.caption ?? r.item_id}
                 </div>
                 <div className={`text-xs ${tone}`}>
                   Picked: {item?.options[r.picked_index] ?? "?"}{" "}
@@ -442,7 +524,65 @@ function Summary({
         onClick={onReplay}
         className="w-full rounded-md border border-ink-700 px-4 py-3 text-sm font-medium text-text-secondary hover:bg-ink-800"
       >
-        Replay
+        Replay this round (practice — no score saved)
+      </button>
+    </div>
+  );
+}
+
+
+/** Wordle-style share card. Pattern: 🟩 correct, 🟥 wrong. */
+function ShareCard({
+  summary,
+  setId,
+}: {
+  summary: RoundSummary;
+  setId: number;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const max_possible = summary.results.length * POINTS_PER_CORRECT;
+  const pattern = summary.results
+    .map((r) => (r.is_correct ? "🟩" : "🟥"))
+    .join("");
+  const origin =
+    typeof window !== "undefined" ? window.location.origin : "https://mob.tennis";
+  const shareUrl = `${origin}/play/call-the-shot/sets/${setId}`;
+  const text =
+    `🎾 mob.tennis · Call the Shot · ${summary.total_points}/${max_possible}\n` +
+    `${pattern}\n` +
+    shareUrl;
+
+  const onShare = async () => {
+    if (typeof navigator !== "undefined" && "share" in navigator) {
+      try {
+        await navigator.share({ title: "Call the Shot", text });
+        return;
+      } catch { /* cancelled */ }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  return (
+    <div className="rounded-md border border-ink-700 bg-ink-900 p-4 space-y-3">
+      <div className="space-y-1">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+          Share your round
+        </div>
+        <pre className="text-base leading-relaxed text-text-primary whitespace-pre-wrap font-sans">
+          {text}
+        </pre>
+      </div>
+      <button
+        type="button"
+        onClick={onShare}
+        className="w-full rounded-md border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-bold text-accent hover:bg-accent/20"
+      >
+        {copied ? "Copied to clipboard ✓" : "Share"}
       </button>
     </div>
   );

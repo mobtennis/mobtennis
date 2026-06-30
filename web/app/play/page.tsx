@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import {
   api,
+  type CallTheShotSet,
   type NameTheProSet,
   type SpotTheBallSet,
 } from "@/lib/api";
@@ -25,11 +26,14 @@ type GameCard = {
 };
 
 export default async function PlayHubPage() {
-  const [stb, ntp] = await Promise.all([
+  const [stb, ntp, cts] = await Promise.all([
     api<SpotTheBallSet>("/api/spot-the-ball/today", { revalidate: 300 }).catch(
       () => null,
     ),
     api<NameTheProSet>("/api/name-the-pro/today", { revalidate: 300 }).catch(
+      () => null,
+    ),
+    api<CallTheShotSet>("/api/call-the-shot/today", { revalidate: 300 }).catch(
       () => null,
     ),
   ]);
@@ -64,9 +68,9 @@ export default async function PlayHubPage() {
       description:
         "Highlight clip pauses mid-rally. Pick where the next shot is going, video plays the resolution.",
       cover_image_url: null,
-      publish_date: null,
-      image_count: null,
-      pill: "Prototype",
+      publish_date: cts?.publish_date ?? null,
+      image_count: cts?.items?.length ?? null,
+      pill: cts ? "Today's round" : "New",
     },
   ];
 
@@ -78,8 +82,8 @@ export default async function PlayHubPage() {
         </div>
         <h1 className="text-3xl font-bold tracking-tight">Play</h1>
         <p className="max-w-prose text-sm text-text-secondary">
-          Two short rounds, refreshed regularly. No login, no streaks — just
-          tennis trivia. Share your score when you're done.
+          Three short rounds, refreshed daily. No login, no streaks — just
+          tennis. Share your score when you're done.
         </p>
       </header>
 
@@ -141,6 +145,12 @@ export default async function PlayHubPage() {
           className="font-medium text-accent hover:text-accent-dim"
         >
           Name the pro archive →
+        </Link>
+        <Link
+          href="/play/call-the-shot/archive"
+          className="font-medium text-accent hover:text-accent-dim"
+        >
+          Call the shot archive →
         </Link>
       </div>
     </div>

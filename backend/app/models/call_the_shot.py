@@ -1,20 +1,26 @@
 """Call the Shot — predict-where-the-ball-goes game.
 
-One row per playable item: a YouTube clip + a pause point + 4 options
-(stored as JSON since SQLite has no array type) + the correct index.
-No daily-set concept yet — items are played in one flat list,
-auto-sorted by (video_id, start_at_s) on the frontend.
-
-If/when we need bundled daily rounds (matching STB/NTP), we'd add a
-cts_sets table + a set_id FK here. For now flat list keeps the
-content pipeline simple.
+Mirrors the STB / NTP data shape: a parent CallTheShotSet (one per
+publish day) groups 5 CallTheShotItem rows. Items can also exist
+unassigned (set_id=NULL) — those live in the "pool" until the
+bundler scoops them into the next available set.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlmodel import Field, SQLModel
+
+
+class CallTheShotSet(SQLModel, table=True):
+    __tablename__ = "cts_sets"
+
+    id: int | None = Field(default=None, primary_key=True)
+    title: str | None = None
+    publish_date: date = Field(index=True, unique=True)
+    is_published: bool = Field(default=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class CallTheShotItem(SQLModel, table=True):
@@ -38,5 +44,10 @@ class CallTheShotItem(SQLModel, table=True):
     # source video gets taken down and we want to keep the row for
     # audit. Default visible.
     is_hidden: bool = Field(default=False, index=True)
+    # Parent set + position. NULL when sitting in the pool waiting
+    # for the bundler. Once bundled, items are pinned: re-running
+    # the bundler doesn't shuffle them.
+    set_id: int | None = Field(default=None, foreign_key="cts_sets.id", index=True)
+    position: int | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

@@ -112,6 +112,11 @@ def _migrate() -> None:
         ("editorial_digests", "campaign_briefs_json", "TEXT"),
         ("editorial_digests", "period_start", "DATETIME"),
         ("editorial_digests", "period_end", "DATETIME"),
+        # Call the Shot moved from a flat item list to set + items in
+        # the same shape as STB/NTP. Items get an FK + position once
+        # the bundler assigns them; both nullable so old rows survive.
+        ("cts_items", "set_id", "INTEGER"),
+        ("cts_items", "position", "INTEGER"),
     ]
 
     with engine.begin() as conn:
