@@ -60,9 +60,9 @@ export default async function PlayHubPage() {
     {
       href: "/play/call-the-shot",
       title: "Call the shot",
-      tagline: "Predict the winning shot",
+      tagline: "Predict where the ball is going",
       description:
-        "Highlight clip pauses right before the winning shot. Pick where it's going, video plays the resolution.",
+        "Highlight clip pauses mid-rally. Pick where the next shot is going, video plays the resolution.",
       cover_image_url: null,
       publish_date: null,
       image_count: null,

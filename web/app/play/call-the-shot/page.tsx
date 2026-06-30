@@ -3,7 +3,7 @@ import { CALL_THE_SHOT_ITEMS } from "@/lib/call-the-shot-data";
 
 export const metadata = {
   title: "Call the shot",
-  description: "Watch the rally, predict where the winning shot goes.",
+  description: "Watch the rally, predict where the next shot is going.",
 };
 
 export default function CallTheShotPage() {

@@ -372,7 +372,7 @@ export function CallTheShotRound({
       )}
       {paused && verdict === "pending" && (
         <div className="rounded-md border border-accent/40 bg-accent/10 px-4 py-3 text-center text-sm font-semibold text-accent">
-          Where's the winning shot going?
+          Where's this shot going?
         </div>
       )}
       {verdict !== "pending" && (

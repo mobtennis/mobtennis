@@ -1,9 +1,10 @@
 /**
  * Hand-typed Call the Shot prototype items.
  *
- * To swap in a real clip: find a tennis highlight on YouTube, scrub
- * to a rally just BEFORE the winning shot strike, note the
- * timestamp (seconds, fractional is fine), and the 4 options.
+ * Operator workflow: find a tennis highlight on YouTube, scrub to
+ * ANY rally shot (not just the winner — any shot mid-rally where
+ * a competent viewer could plausibly predict the direction works),
+ * note the timestamp just before the strike, and the 4 options.
  *
  * `correct_index` is 0-based into `options`.
  *
