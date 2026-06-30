@@ -152,37 +152,37 @@ export function CallTheShotRound({
     }, 50);
   }, [stopPoll]);
 
-  // Build the player once the IFrame API is loaded and we have an item.
-  // We KEEP the same Player instance across items and just call
-  // loadVideoById on advance — cheaper, and avoids re-renders that lose
-  // the iframe's audio output gesture-grant.
+  // Build the player ONCE the IFrame API is loaded. We keep the
+  // same Player instance across items and just call loadVideoById
+  // on advance.
+  //
+  // Polling is started explicitly when we want to catch a pause (on
+  // Tap-to-start, and after each loadVideoById in advance). The
+  // `onStateChange` callback used to start polling itself on
+  // PLAYING but that broke after the user resumed post-pick:
+  // playVideo → PLAYING event → poll restarts → immediately
+  // catches the already-crossed pause_at_s → pauses again. We
+  // were resuming and re-pausing within 50ms.
   useEffect(() => {
-    if (!apiReady || playerRef.current || !current) return;
+    if (!apiReady || playerRef.current || !items[0]) return;
+    const initial = items[0];
     playerRef.current = new window.YT!.Player(containerId, {
-      videoId: current.video_id,
+      videoId: initial.video_id,
       playerVars: {
         playsinline: 1,         // iOS: keep video inline, no native fullscreen
         modestbranding: 1,      // strips most YT branding chrome
         rel: 0,                 // no end-of-video "related" overlay
         controls: 1,            // keep native controls — backstop if our pause logic glitches
         enablejsapi: 1,
-        start: current.start_at_s ? Math.floor(current.start_at_s) : 0,
+        start: initial.start_at_s ? Math.floor(initial.start_at_s) : 0,
       },
       events: {
         onReady: ({ target }) => {
           // Seek to start_at_s up front so the user doesn't watch the
           // intro card. The `start` playerVar above also does this but
           // YT is inconsistent about honouring it across cue/load paths.
-          if (current.start_at_s) {
-            try { target.seekTo(current.start_at_s, true); } catch { /* ignore */ }
-          }
-        },
-        onStateChange: (e) => {
-          // PLAYING == 1 — once they hit play (native or via our button)
-          // start polling for the pause moment, but only the first time
-          // through each item (`paused` resets per advance).
-          if (e.data === 1 && current && !paused) {
-            startPollForPause(current.pause_at_s);
+          if (initial.start_at_s) {
+            try { target.seekTo(initial.start_at_s, true); } catch { /* ignore */ }
           }
         },
       },
@@ -193,7 +193,12 @@ export function CallTheShotRound({
       // owning component. React 18 strict mode invokes effects twice;
       // the cleanup here only runs on actual unmount.
     };
-  }, [apiReady, current, paused, startPollForPause, stopPoll]);
+    // Intentionally [apiReady, items[0]?.id] — we only want to build
+    // the player when the API loads, and never rebuild for later
+    // items. `current` and `paused` were here before and caused the
+    // stale-closure bug in onStateChange.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiReady, items[0]?.id]);
 
   // On unmount, drop the player.
   useEffect(() => () => {
@@ -246,12 +251,13 @@ export function CallTheShotRound({
           videoId: nextItem.video_id,
           startSeconds: nextItem.start_at_s ?? 0,
         });
-        // loadVideoById auto-plays once ready, which triggers the
-        // onStateChange polling. iOS may pause it if the gesture
-        // permission lapses; the user can tap the native control.
       } catch { /* ignore */ }
+      // Start polling for the NEW pause point now. getCurrentTime
+      // returns 0 until the new video starts streaming, so the poll
+      // does nothing until the video actually plays past pause_at_s.
+      startPollForPause(nextItem.pause_at_s);
     }
-  }, [idx, items]);
+  }, [idx, items, startPollForPause]);
 
   const cumulative = useMemo(
     () => results.filter((r) => r.is_correct).length * POINTS_PER_CORRECT,
@@ -269,6 +275,7 @@ export function CallTheShotRound({
             startSeconds: items[0].start_at_s ?? 0,
           });
         } catch { /* ignore */ }
+        startPollForPause(items[0].pause_at_s);
       }
     }} />;
   }
@@ -310,6 +317,7 @@ export function CallTheShotRound({
             onClick={() => {
               setStarted(true);
               try { playerRef.current?.playVideo(); } catch { /* ignore */ }
+              if (current) startPollForPause(current.pause_at_s);
             }}
             className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm font-bold uppercase tracking-wider text-white hover:bg-black/40"
           >
