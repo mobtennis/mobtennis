@@ -20,10 +20,9 @@ export type CallTheShotItem = {
    *  cards and dead air before the rally we care about. Defaults to 0
    *  if omitted. */
   start_at_s?: number;
-  /** Where to pause, in seconds. Fractional ok. */
+  /** Where to pause, in seconds. Fractional ok — YouTube's seekTo
+   *  accepts sub-second precision. */
   pause_at_s: number;
-  /** Seconds AFTER pause to keep playing on reveal before "Next". */
-  resume_for_s: number;
   /** One-line context shown under the video. */
   caption: string;
   /** 4 prediction buttons. Index 0..3 — correct_index points at the right one. */
@@ -43,8 +42,7 @@ export const CALL_THE_SHOT_ITEMS: CallTheShotItem[] = [
     id: "wim-2025-men-final-1",
     video_id: "eRbTHj2KLro",
     start_at_s: 15,
-    pause_at_s: 27,
-    resume_for_s: 6,
+    pause_at_s: 27.5,
     caption: "Sinner vs Alcaraz · Wimbledon 2025 final",
     options: [
       "Crosscourt volley",
@@ -60,7 +58,6 @@ export const CALL_THE_SHOT_ITEMS: CallTheShotItem[] = [
     video_id: "X4dVyRyY7TY",
     start_at_s: 32,
     pause_at_s: 37,
-    resume_for_s: 6,
     caption: "Świątek vs Anisimova · Wimbledon 2025 final",
     options: [
       "Down the line",

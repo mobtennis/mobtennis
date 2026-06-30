@@ -128,8 +128,11 @@ export function CallTheShotRound({
     }
   }, []);
 
-  // Poll currentTime and pause when we cross the target. Resolution
-  // ~250ms — close enough to feel responsive without burning CPU.
+  // Poll currentTime and pause when we cross the target. 50ms = ~3
+  // frames at 60fps, tight enough to feel frame-accurate without
+  // burning CPU. After pausing, we ALSO seek back to the exact
+  // target so the displayed frame is independent of when we caught
+  // the crossing (the player might have pushed past by a few frames).
   const startPollForPause = useCallback((targetS: number) => {
     stopPoll();
     pollRef.current = window.setInterval(() => {
@@ -138,13 +141,15 @@ export function CallTheShotRound({
       try {
         if (p.getCurrentTime() >= targetS) {
           p.pauseVideo();
+          // Frame-lock to the exact pause point.
+          p.seekTo(targetS, true);
           setPaused(true);
           stopPoll();
         }
       } catch {
         /* player gone or not ready yet — try again next tick */
       }
-    }, 250);
+    }, 50);
   }, [stopPoll]);
 
   // Build the player once the IFrame API is loaded and we have an item.
@@ -211,16 +216,15 @@ export function CallTheShotRound({
         is_correct,
       },
     ]);
-    // Resume the clip so the player sees how the point ended. Auto-
-    // advance after `resume_for_s`.
+    // Resume the clip so the player sees how the point ended. They
+    // advance manually via the Next button — point lengths vary too
+    // much for a single auto-advance timer to feel right (it either
+    // chops off the celebration or stalls on a black frame after the
+    // clip's own outro).
     const p = playerRef.current;
     if (p) {
       try { p.playVideo(); } catch { /* ignore */ }
     }
-    window.setTimeout(() => {
-      advance();
-    }, current.resume_for_s * 1000);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, verdict]);
 
   const advance = useCallback(() => {
@@ -353,20 +357,31 @@ export function CallTheShotRound({
         </div>
       )}
       {verdict !== "pending" && (
-        <div
-          className={`rounded-md border p-4 ${
-            verdict === "correct"
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700"
-              : "border-red-500/40 bg-red-500/10 text-red-700"
-          }`}
-        >
-          <div className="text-lg font-semibold">
-            {verdict === "correct" ? "🎾  Called it" : "❌  Missed"}
+        <>
+          <div
+            className={`rounded-md border p-4 ${
+              verdict === "correct"
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700"
+                : "border-red-500/40 bg-red-500/10 text-red-700"
+            }`}
+          >
+            <div className="text-lg font-semibold">
+              {verdict === "correct" ? "🎾  Called it" : "❌  Missed"}
+            </div>
+            <div className="mt-1 text-xs uppercase tracking-wider opacity-80">
+              Watch the point finish, then advance.
+            </div>
           </div>
-          <div className="mt-1 text-xs uppercase tracking-wider opacity-80">
-            Watching the resolution…
-          </div>
-        </div>
+          <button
+            type="button"
+            onClick={advance}
+            className="w-full rounded-md bg-accent px-4 py-3 text-sm font-bold uppercase tracking-wider text-white hover:bg-accent-dim"
+          >
+            {idx + 1 < items.length
+              ? `Next (${idx + 2}/${items.length}) →`
+              : "See results →"}
+          </button>
+        </>
       )}
 
       {current.source_url && (
