@@ -57,6 +57,17 @@ export default async function PlayHubPage() {
       image_count: ntp?.images?.length ?? null,
       pill: "New",
     },
+    {
+      href: "/play/call-the-shot",
+      title: "Call the shot",
+      tagline: "Predict the winning shot",
+      description:
+        "Highlight clip pauses right before the winning shot. Pick where it's going, video plays the resolution.",
+      cover_image_url: null,
+      publish_date: null,
+      image_count: null,
+      pill: "Prototype",
+    },
   ];
 
   return (
