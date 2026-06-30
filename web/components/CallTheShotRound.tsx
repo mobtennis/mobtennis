@@ -103,10 +103,27 @@ function useYouTubeApiReady(): boolean {
 
 
 export function CallTheShotRound({
-  items,
+  items: rawItems,
 }: {
   items: CallTheShotItem[];
 }) {
+  // Sort items so same-video clips play in chronological order, while
+  // preserving the operator's cross-video order (first-appearance
+  // index per video_id). This guarantees seekTo paths only move
+  // forward through a video and keeps adjacent items contiguous.
+  const items = useMemo(() => {
+    const firstAppearance = new Map<string, number>();
+    rawItems.forEach((it, i) => {
+      if (!firstAppearance.has(it.video_id)) firstAppearance.set(it.video_id, i);
+    });
+    return [...rawItems].sort((a, b) => {
+      const av = firstAppearance.get(a.video_id) ?? 0;
+      const bv = firstAppearance.get(b.video_id) ?? 0;
+      if (av !== bv) return av - bv;
+      return (a.start_at_s ?? 0) - (b.start_at_s ?? 0);
+    });
+  }, [rawItems]);
+
   const apiReady = useYouTubeApiReady();
   const containerId = "cts-player";
   const playerRef = useRef<YT.Player | null>(null);
@@ -230,7 +247,14 @@ export function CallTheShotRound({
     if (p) {
       try { p.playVideo(); } catch { /* ignore */ }
     }
-  }, [current, verdict]);
+    // If the next item is on the SAME video, stop playback at its
+    // start point — otherwise the resolution bleeds into the setup
+    // for the next item and spoils it.
+    const nextItem = items[idx + 1];
+    if (nextItem && nextItem.video_id === current.video_id) {
+      startPollForPause(nextItem.start_at_s ?? 0);
+    }
+  }, [current, verdict, items, idx, startPollForPause]);
 
   const advance = useCallback(() => {
     if (idx + 1 >= items.length) {
