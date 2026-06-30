@@ -240,6 +240,7 @@ export function CallTheShotRound({
       return;
     }
     const nextItem = items[idx + 1];
+    const sameVideo = current?.video_id === nextItem.video_id;
     setIdx(idx + 1);
     setVerdict("pending");
     setPickedIdx(null);
@@ -247,17 +248,27 @@ export function CallTheShotRound({
     const p = playerRef.current;
     if (p && nextItem) {
       try {
-        p.loadVideoById({
-          videoId: nextItem.video_id,
-          startSeconds: nextItem.start_at_s ?? 0,
-        });
+        if (sameVideo) {
+          // Same video, just jump to the new start point. Saves the
+          // reload + buffer wait and keeps the iOS gesture grant
+          // (loadVideoById occasionally drops the autoplay
+          // permission, forcing a manual tap to resume).
+          p.seekTo(nextItem.start_at_s ?? 0, true);
+          p.playVideo();
+        } else {
+          p.loadVideoById({
+            videoId: nextItem.video_id,
+            startSeconds: nextItem.start_at_s ?? 0,
+          });
+        }
       } catch { /* ignore */ }
       // Start polling for the NEW pause point now. getCurrentTime
-      // returns 0 until the new video starts streaming, so the poll
-      // does nothing until the video actually plays past pause_at_s.
+      // returns 0 until the new video starts streaming (load path)
+      // or jumps to start_at_s immediately (seek path), so the poll
+      // is no-op until the video actually plays past pause_at_s.
       startPollForPause(nextItem.pause_at_s);
     }
-  }, [idx, items, startPollForPause]);
+  }, [idx, items, current, startPollForPause]);
 
   const cumulative = useMemo(
     () => results.filter((r) => r.is_correct).length * POINTS_PER_CORRECT,
