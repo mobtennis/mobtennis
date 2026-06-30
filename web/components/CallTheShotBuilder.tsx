@@ -122,7 +122,11 @@ function generateItemJson(d: Draft): string {
 }
 
 
-export function CallTheShotBuilder() {
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL || "https://api.mob.tennis";
+
+
+export function CallTheShotBuilder({ adminKey }: { adminKey: string }) {
   const apiReady = useYouTubeApiReady();
   const playerRef = useRef<YT.Player | null>(null);
   const pollRef = useRef<number | null>(null);
@@ -253,6 +257,45 @@ export function CallTheShotBuilder() {
       /* clipboard unavailable */
     }
   }, [itemJson]);
+
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const saveItem = useCallback(async () => {
+    if (!draft.video_id || draft.start_at_s === null || draft.pause_at_s === null) {
+      setSaveError("video, start, and pause are all required");
+      setSaveState("error");
+      return;
+    }
+    setSaveState("saving");
+    setSaveError(null);
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/admin/call-the-shot/items?key=${encodeURIComponent(adminKey)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            video_id: draft.video_id,
+            start_at_s: draft.start_at_s,
+            pause_at_s: draft.pause_at_s,
+            caption: draft.caption,
+            options: draft.options,
+            correct_index: draft.correct_index,
+            source_url: `https://www.youtube.com/watch?v=${draft.video_id}`,
+          }),
+        },
+      );
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      }
+      setSaveState("saved");
+      setTimeout(() => setSaveState("idle"), 2000);
+    } catch (e) {
+      setSaveError(String(e));
+      setSaveState("error");
+    }
+  }, [adminKey, draft]);
 
   const resetAll = useCallback(() => {
     if (!window.confirm("Clear the whole draft?")) return;
@@ -450,13 +493,31 @@ export function CallTheShotBuilder() {
             <pre className="overflow-x-auto rounded-md border border-ink-700 bg-ink-900 p-3 text-xs leading-relaxed text-text-primary">
               {itemJson}
             </pre>
-            <button
-              type="button"
-              onClick={copyJson}
-              className="w-full rounded-md bg-accent px-4 py-2 text-sm font-bold uppercase tracking-wider text-white hover:bg-accent-dim"
-            >
-              {copyOk ? "Copied ✓" : "Copy to clipboard"}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={saveItem}
+                disabled={saveState === "saving"}
+                className="flex-1 rounded-md bg-accent px-4 py-2 text-sm font-bold uppercase tracking-wider text-white hover:bg-accent-dim disabled:opacity-60"
+              >
+                {saveState === "saving" ? "Saving…" :
+                 saveState === "saved" ? "Saved ✓" :
+                 "Save to library"}
+              </button>
+              <button
+                type="button"
+                onClick={copyJson}
+                className="rounded-md border border-ink-700 px-4 py-2 text-sm font-medium text-text-secondary hover:bg-ink-800"
+                title="Copy the TS snippet — fallback if the API write fails"
+              >
+                {copyOk ? "Copied ✓" : "Copy JSON"}
+              </button>
+            </div>
+            {saveState === "error" && saveError && (
+              <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-700">
+                {saveError}
+              </div>
+            )}
           </div>
         </>
       )}

@@ -24,8 +24,9 @@ export default async function CallTheShotBuilderPage({
       </div>
     );
   }
-  // Phase 1 has no backend writes — the page just outputs a TS snippet
-  // for the operator to paste into the data file. Any non-empty key
-  // passes the gate; this is just to keep the page off public surfaces.
-  return <CallTheShotBuilder />;
+  // Server-side just gates the route by presence of any key. The key
+  // itself is enforced by the FastAPI admin endpoints when the
+  // builder writes — wrong key gets a 401 from the API and surfaces
+  // as a Save error in the UI.
+  return <CallTheShotBuilder adminKey={key} />;
 }

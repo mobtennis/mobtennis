@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { CallTheShotItem } from "@/lib/call-the-shot-data";
+import type { CallTheShotItem } from "@/lib/api";
 import { useYouTubeApiReady } from "@/lib/youtube";
 
 /**

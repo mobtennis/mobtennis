@@ -954,3 +954,123 @@ def ntp_queue(session: Session = Depends(get_session)):
             "cover_image_url": first.image_url if first else "",
         })
     return {"sets": out}
+
+
+# ---------------------------------------------------------------------------
+# Call the Shot admin
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/call-the-shot/items",
+    dependencies=[Depends(_require_admin_key)],
+)
+def cts_list(session: Session = Depends(get_session)):
+    """Every Call the Shot item, hidden ones included. Used by an
+    admin queue view + by the builder to inspect what already exists
+    for a given video."""
+    from app.api.call_the_shot import _to_view
+    from app.models.call_the_shot import CallTheShotItem
+    rows = session.exec(
+        select(CallTheShotItem).order_by(
+            CallTheShotItem.video_id, CallTheShotItem.start_at_s,
+        )
+    ).all()
+    return [{
+        **_to_view(r).model_dump(),
+        "is_hidden": r.is_hidden,
+        "created_at": r.created_at.isoformat(),
+    } for r in rows]
+
+
+@router.post(
+    "/call-the-shot/items",
+    dependencies=[Depends(_require_admin_key)],
+)
+def cts_create(
+    body: dict = Body(...),
+    session: Session = Depends(get_session),
+):
+    """Create a new item from the builder. Body matches
+    CallTheShotItemCreate — options must be a list of exactly 4
+    strings; correct_index must be 0..3."""
+    import json
+    from app.models.call_the_shot import CallTheShotItem
+    from app.schemas.call_the_shot import CallTheShotItemCreate
+    try:
+        payload = CallTheShotItemCreate(**body)
+    except Exception as exc:
+        raise HTTPException(422, f"invalid payload: {exc}")
+    if len(payload.options) != 4:
+        raise HTTPException(422, "options must have exactly 4 entries")
+    if not (0 <= payload.correct_index <= 3):
+        raise HTTPException(422, "correct_index must be 0..3")
+    row = CallTheShotItem(
+        video_id=payload.video_id,
+        start_at_s=payload.start_at_s,
+        pause_at_s=payload.pause_at_s,
+        caption=payload.caption,
+        options_json=json.dumps(payload.options),
+        correct_index=payload.correct_index,
+        source_url=payload.source_url,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return {"id": row.id}
+
+
+@router.patch(
+    "/call-the-shot/items/{item_id}",
+    dependencies=[Depends(_require_admin_key)],
+)
+def cts_update(
+    item_id: int,
+    body: dict = Body(...),
+    session: Session = Depends(get_session),
+):
+    """Partial update. Send only the fields you want to change."""
+    import json
+    from datetime import datetime as _dt
+    from app.models.call_the_shot import CallTheShotItem
+    from app.schemas.call_the_shot import CallTheShotItemUpdate
+    row = session.exec(
+        select(CallTheShotItem).where(CallTheShotItem.id == item_id),
+    ).first()
+    if not row:
+        raise HTTPException(404, "Item not found")
+    try:
+        patch = CallTheShotItemUpdate(**body)
+    except Exception as exc:
+        raise HTTPException(422, f"invalid payload: {exc}")
+    data = patch.model_dump(exclude_unset=True)
+    if "options" in data:
+        opts = data.pop("options")
+        if not isinstance(opts, list) or len(opts) != 4:
+            raise HTTPException(422, "options must have exactly 4 entries")
+        row.options_json = json.dumps(opts)
+    for k, v in data.items():
+        setattr(row, k, v)
+    row.updated_at = _dt.utcnow()
+    session.add(row)
+    session.commit()
+    return {"updated": item_id}
+
+
+@router.delete(
+    "/call-the-shot/items/{item_id}",
+    dependencies=[Depends(_require_admin_key)],
+)
+def cts_delete(
+    item_id: int,
+    session: Session = Depends(get_session),
+):
+    from app.models.call_the_shot import CallTheShotItem
+    row = session.exec(
+        select(CallTheShotItem).where(CallTheShotItem.id == item_id),
+    ).first()
+    if not row:
+        raise HTTPException(404, "Item not found")
+    session.delete(row)
+    session.commit()
+    return {"deleted": item_id}

@@ -477,6 +477,17 @@ export type NameTheProArchiveItem = {
   cover_image_url: string;
 };
 
+export type CallTheShotItem = {
+  id: string;
+  video_id: string;
+  start_at_s?: number;
+  pause_at_s: number;
+  caption: string;
+  options: [string, string, string, string];
+  correct_index: 0 | 1 | 2 | 3;
+  source_url?: string;
+};
+
 export type DigestDetail = DigestSummary & {
   body_md: string;
   model_name: string;

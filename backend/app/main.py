@@ -13,6 +13,7 @@ from app.api import (
     h2h,
     follows,
     match_follows,
+    call_the_shot,
     matches,
     name_the_pro,
     news,
@@ -244,4 +245,5 @@ app.include_router(videos.router)
 app.include_router(digest.router)
 app.include_router(spot_the_ball.router)
 app.include_router(name_the_pro.router)
+app.include_router(call_the_shot.router)
 app.include_router(admin.router)
