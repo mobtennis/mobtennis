@@ -55,11 +55,11 @@ export const CALL_THE_SHOT_ITEMS: CallTheShotItem[] = [
     correct_index: 0,
     source_url: "https://www.youtube.com/watch?v=eRbTHj2KLro",
   },
-  // TODO: women's final still needs operator scrubbing.
   {
-    id: "wim-2025-women-final",
+    id: "wim-2025-women-final-1",
     video_id: "X4dVyRyY7TY",
-    pause_at_s: 50,
+    start_at_s: 32,
+    pause_at_s: 37,
     resume_for_s: 6,
     caption: "Świątek vs Anisimova · Wimbledon 2025 final",
     options: [
@@ -68,7 +68,7 @@ export const CALL_THE_SHOT_ITEMS: CallTheShotItem[] = [
       "Body serve",
       "Drop shot",
     ],
-    correct_index: 1,
+    correct_index: 0,
     source_url: "https://www.youtube.com/watch?v=X4dVyRyY7TY",
   },
 ];
