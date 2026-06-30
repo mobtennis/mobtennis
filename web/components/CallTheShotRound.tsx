@@ -161,10 +161,16 @@ export function CallTheShotRound({
         rel: 0,                 // no end-of-video "related" overlay
         controls: 1,            // keep native controls — backstop if our pause logic glitches
         enablejsapi: 1,
+        start: current.start_at_s ? Math.floor(current.start_at_s) : 0,
       },
       events: {
-        onReady: () => {
-          /* nothing until user taps Play */
+        onReady: ({ target }) => {
+          // Seek to start_at_s up front so the user doesn't watch the
+          // intro card. The `start` playerVar above also does this but
+          // YT is inconsistent about honouring it across cue/load paths.
+          if (current.start_at_s) {
+            try { target.seekTo(current.start_at_s, true); } catch { /* ignore */ }
+          }
         },
         onStateChange: (e) => {
           // PLAYING == 1 — once they hit play (native or via our button)
@@ -232,7 +238,10 @@ export function CallTheShotRound({
     const p = playerRef.current;
     if (p && nextItem) {
       try {
-        p.loadVideoById({ videoId: nextItem.video_id, startSeconds: 0 });
+        p.loadVideoById({
+          videoId: nextItem.video_id,
+          startSeconds: nextItem.start_at_s ?? 0,
+        });
         // loadVideoById auto-plays once ready, which triggers the
         // onStateChange polling. iOS may pause it if the gesture
         // permission lapses; the user can tap the native control.
@@ -250,7 +259,12 @@ export function CallTheShotRound({
       setIdx(0); setResults([]); setVerdict("pending"); setPickedIdx(null); setPaused(false);
       const p = playerRef.current;
       if (p && items[0]) {
-        try { p.loadVideoById({ videoId: items[0].video_id, startSeconds: 0 }); } catch { /* ignore */ }
+        try {
+          p.loadVideoById({
+            videoId: items[0].video_id,
+            startSeconds: items[0].start_at_s ?? 0,
+          });
+        } catch { /* ignore */ }
       }
     }} />;
   }

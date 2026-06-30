@@ -16,6 +16,10 @@ export type CallTheShotItem = {
   id: string;
   /** YouTube video ID, e.g. "dQw4w9WgXcQ" — NOT the full URL. */
   video_id: string;
+  /** Where to start the clip, in seconds. Lets us skip past intro
+   *  cards and dead air before the rally we care about. Defaults to 0
+   *  if omitted. */
+  start_at_s?: number;
   /** Where to pause, in seconds. Fractional ok. */
   pause_at_s: number;
   /** Seconds AFTER pause to keep playing on reveal before "Next". */
@@ -36,24 +40,26 @@ export const CALL_THE_SHOT_ITEMS: CallTheShotItem[] = [
   // shot, and adjust pause_at_s + correct_index. The video_id and
   // caption are correct.
   {
-    id: "wim-2025-men-final",
+    id: "wim-2025-men-final-1",
     video_id: "eRbTHj2KLro",
-    pause_at_s: 45,  // TODO: scrub to a rally just before a winner
+    start_at_s: 15,
+    pause_at_s: 27,
     resume_for_s: 6,
     caption: "Sinner vs Alcaraz · Wimbledon 2025 final",
     options: [
-      "Down the line",
-      "Cross-court winner",
-      "Drop shot",
-      "Lob",
+      "Crosscourt volley",
+      "Volley down the line",
+      "Lob down the line",
+      "Body shot",
     ],
-    correct_index: 1,  // TODO: verify against the actual shot at pause_at_s
+    correct_index: 0,
     source_url: "https://www.youtube.com/watch?v=eRbTHj2KLro",
   },
+  // TODO: women's final still needs operator scrubbing.
   {
     id: "wim-2025-women-final",
     video_id: "X4dVyRyY7TY",
-    pause_at_s: 50,  // TODO: scrub to a rally just before a winner
+    pause_at_s: 50,
     resume_for_s: 6,
     caption: "Świątek vs Anisimova · Wimbledon 2025 final",
     options: [
@@ -62,7 +68,7 @@ export const CALL_THE_SHOT_ITEMS: CallTheShotItem[] = [
       "Body serve",
       "Drop shot",
     ],
-    correct_index: 1,  // TODO: verify
+    correct_index: 1,
     source_url: "https://www.youtube.com/watch?v=X4dVyRyY7TY",
   },
 ];
