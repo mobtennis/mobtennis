@@ -54,6 +54,21 @@ export const CALL_THE_SHOT_ITEMS: CallTheShotItem[] = [
     source_url: "https://www.youtube.com/watch?v=eRbTHj2KLro",
   },
   {
+    id: "wim-2025-men-final-2",
+    video_id: "eRbTHj2KLro",
+    start_at_s: 35,
+    pause_at_s: 44,
+    caption: "Sinner vs Alcaraz · Wimbledon 2025 final",
+    options: [
+      "Crosscourt drop shot",
+      "Volley crosscourt",
+      "Volley down the line",
+      "Body shot",
+    ],
+    correct_index: 0,
+    source_url: "https://www.youtube.com/watch?v=eRbTHj2KLro",
+  },
+  {
     id: "wim-2025-women-final-1",
     video_id: "X4dVyRyY7TY",
     start_at_s: 32,
