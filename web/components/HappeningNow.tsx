@@ -168,31 +168,34 @@ function OngoingTournamentBlock({
 
   return (
     <div className="overflow-hidden rounded-lg border border-ink-700 bg-ink-900 shadow-card">
-      <Link
-        href={href}
-        className="flex items-center justify-between border-b border-ink-700 bg-ink-800/60 px-3 py-2 hover:bg-ink-800"
-      >
-        <span className="truncate text-sm font-semibold">
+      <div className="flex items-center gap-2 border-b border-ink-700 bg-ink-800/60 px-3 py-2">
+        <Link
+          href={href}
+          className="min-w-0 shrink truncate text-sm font-semibold hover:text-accent"
+        >
           {tournament.name}
           {tournament.phase === "qualifying" && (
             <span className="ml-1.5 text-text-muted font-medium">(Qualifying)</span>
           )}
-        </span>
+        </Link>
+        {showFilter && (
+          <input
+            type="search"
+            placeholder="filter names…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="min-w-0 flex-1 border-0 bg-transparent px-1 py-0.5 text-xs text-text-primary placeholder:text-text-muted/70 focus:bg-ink-900/70 focus:outline-none"
+          />
+        )}
         <span className="shrink-0 text-[11px] font-semibold text-text-muted">
           {liveMatches.length > 0
             ? `${liveMatches.length} live`
             : "Upcoming"}
         </span>
-      </Link>
-      {showFilter && (
-        <div className="border-b border-ink-700 bg-ink-900 px-3 py-2">
-          <input
-            type="search"
-            placeholder={`Filter ${total} matches by player name…`}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="w-full rounded-md border border-ink-700 bg-ink-800 px-3 py-1.5 text-sm placeholder:text-text-muted focus:border-accent focus:outline-none"
-          />
+      </div>
+      {showFilter && filteredTotal === 0 && query && (
+        <div className="border-b border-ink-700 bg-ink-900 px-3 py-3 text-center text-xs text-text-muted">
+          No matches for "{query}".
         </div>
       )}
       <div className="divide-y divide-ink-700/50">
@@ -214,11 +217,6 @@ function OngoingTournamentBlock({
               </div>
             ))}
           </>
-        )}
-        {showFilter && filteredTotal === 0 && query && (
-          <div className="px-3 py-4 text-center text-xs text-text-muted">
-            No matches for "{query}".
-          </div>
         )}
       </div>
       {isBig && (
