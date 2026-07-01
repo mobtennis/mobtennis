@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
 
 import {
@@ -123,6 +123,15 @@ function groupByTournamentKey(matches: MatchSummary[]): Map<string, MatchSummary
 }
 
 
+function matchesQuery(m: MatchSummary, q: string): boolean {
+  if (!q) return true;
+  const needle = q.toLowerCase();
+  const p1 = m.player1?.full_name?.toLowerCase() ?? "";
+  const p2 = m.player2?.full_name?.toLowerCase() ?? "";
+  return p1.includes(needle) || p2.includes(needle);
+}
+
+
 function OngoingTournamentBlock({
   tournament,
   liveMatches,
@@ -135,6 +144,22 @@ function OngoingTournamentBlock({
   isBig: boolean;
 }) {
   const total = liveMatches.length + upcomingMatches.length;
+  // Threshold: only show the per-tournament filter once there are
+  // enough matches for scrolling to be tedious. Small events like a
+  // WTA 250 with 2 live matches don't need it.
+  const showFilter = total >= 5;
+  const [query, setQuery] = useState("");
+
+  const filteredLive = useMemo(
+    () => (showFilter ? liveMatches.filter((m) => matchesQuery(m, query)) : liveMatches),
+    [showFilter, liveMatches, query],
+  );
+  const filteredUpcoming = useMemo(
+    () => (showFilter ? upcomingMatches.filter((m) => matchesQuery(m, query)) : upcomingMatches),
+    [showFilter, upcomingMatches, query],
+  );
+  const filteredTotal = filteredLive.length + filteredUpcoming.length;
+
   // No live AND no upcoming-to-show: just the card. Only reachable for
   // big tournaments (the non-big "no live" case bails out earlier).
   if (total === 0) return <TournamentCard t={tournament} showPhase />;
@@ -159,25 +184,41 @@ function OngoingTournamentBlock({
             : "Upcoming"}
         </span>
       </Link>
+      {showFilter && (
+        <div className="border-b border-ink-700 bg-ink-900 px-3 py-2">
+          <input
+            type="search"
+            placeholder={`Filter ${total} matches by player name…`}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full rounded-md border border-ink-700 bg-ink-800 px-3 py-1.5 text-sm placeholder:text-text-muted focus:border-accent focus:outline-none"
+          />
+        </div>
+      )}
       <div className="divide-y divide-ink-700/50">
-        {liveMatches.map((m) => (
+        {filteredLive.map((m) => (
           <div key={m.id} className="bg-ink-900">
             <MatchCard match={m} />
           </div>
         ))}
-        {upcomingMatches.length > 0 && (
+        {filteredUpcoming.length > 0 && (
           <>
             {/* Subtle band separating live from upcoming so the user
                 understands the bottom rows aren't currently in play. */}
             <div className="bg-ink-900/40 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
               Next up
             </div>
-            {upcomingMatches.map((m) => (
+            {filteredUpcoming.map((m) => (
               <div key={m.id} className="bg-ink-900">
                 <MatchCard match={m} />
               </div>
             ))}
           </>
+        )}
+        {showFilter && filteredTotal === 0 && query && (
+          <div className="px-3 py-4 text-center text-xs text-text-muted">
+            No matches for "{query}".
+          </div>
         )}
       </div>
       {isBig && (
