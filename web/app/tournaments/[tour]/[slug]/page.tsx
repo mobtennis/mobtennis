@@ -17,6 +17,7 @@ import { Bracket } from "@/components/Bracket";
 import { ChampionsList } from "@/components/ChampionsList";
 import { Countdown } from "@/components/Countdown";
 import { FilterableMatches } from "@/components/FilterableMatches";
+import { TournamentDayPanel } from "@/components/TournamentDayPanel";
 import { GetTheAppCard } from "@/components/GetTheAppCard";
 import { LastEditionCard } from "@/components/LastEditionCard";
 import { MatchFilterBar } from "@/components/MatchFilters";
@@ -30,6 +31,7 @@ import { TourPills } from "@/components/TourPills";
 import { TournamentStatsGrid } from "@/components/TournamentStatsGrid";
 import { isLocalToday, parseUtcIso, surfaceColor, tournamentColor } from "@/lib/format";
 import { scopeForTour, visibleCategoriesForTour } from "@/lib/match-filters";
+import { DAY_SCROLLER_CATEGORIES } from "@/lib/tournament-days";
 
 type Params = Promise<{ tour: string; slug: string }>;
 
@@ -193,22 +195,39 @@ export default async function TournamentPage({ params }: { params: Params }) {
         />
       )}
 
-      {live.length > 0 && (
-        <FilterableMatches
-          title={`Today · ${tournament.year}`}
-          matches={live}
-          visible={visibleCategoriesForTour(tourEnum)}
-          scope={scopeForTour(tourEnum)}
-        />
-      )}
-
-      {upcoming.length > 0 && (
-        <FilterableMatches
-          title={`Upcoming · ${tournament.year}`}
-          matches={upcoming.slice(0, 30)}
-          visible={visibleCategoriesForTour(tourEnum)}
-          scope={scopeForTour(tourEnum)}
-        />
+      {DAY_SCROLLER_CATEGORIES.has(tournament.category) ? (
+        // Big tournaments (500+ / Slams / Finals) get a day scroller
+        // driving a single filtered list — covers past + today + future
+        // in one control instead of a today / upcoming split. Doubles /
+        // singles pruning is handled downstream by FilterableMatches
+        // via the shared MatchFilterBar cookies.
+        matches.length > 0 && (
+          <TournamentDayPanel
+            matches={matches}
+            year={tournament.year}
+            visible={visibleCategoriesForTour(tourEnum)}
+            scope={scopeForTour(tourEnum)}
+          />
+        )
+      ) : (
+        <>
+          {live.length > 0 && (
+            <FilterableMatches
+              title={`Today · ${tournament.year}`}
+              matches={live}
+              visible={visibleCategoriesForTour(tourEnum)}
+              scope={scopeForTour(tourEnum)}
+            />
+          )}
+          {upcoming.length > 0 && (
+            <FilterableMatches
+              title={`Upcoming · ${tournament.year}`}
+              matches={upcoming.slice(0, 30)}
+              visible={visibleCategoriesForTour(tourEnum)}
+              scope={scopeForTour(tourEnum)}
+            />
+          )}
+        </>
       )}
 
       {/* Standalone bracket only renders for an in-progress edition.

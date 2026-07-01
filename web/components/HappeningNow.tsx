@@ -8,6 +8,7 @@ import {
   type MatchSummary,
   type TournamentsIndexResponse,
 } from "@/lib/api";
+import { LiveTournamentDayBlock } from "@/components/LiveTournamentDayBlock";
 import { MatchCard } from "@/components/MatchCard";
 import { MatchFilterBar } from "@/components/MatchFilters";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -16,6 +17,7 @@ import { TournamentCard } from "@/components/TournamentCard";
 import { passesFilter } from "@/lib/match-filters";
 import { useMatchFilters } from "@/lib/match-filters-client";
 import { tierWeight } from "@/lib/tier";
+import { DAY_SCROLLER_CATEGORIES } from "@/lib/tournament-days";
 
 // Big-tier categories get the "always show" treatment — they appear on
 // the live page even between match sessions or before play has started,
@@ -132,7 +134,30 @@ function matchesQuery(m: MatchSummary, q: string): boolean {
 }
 
 
-function OngoingTournamentBlock({
+function OngoingTournamentBlock(props: {
+  tournament: IndexTournament;
+  liveMatches: MatchSummary[];
+  upcomingMatches: MatchSummary[];
+  isBig: boolean;
+}) {
+  // Big tournaments (Slams + 500+ + Finals) get a lazy-loaded
+  // day-scroller block that spans past + today + future. The simpler
+  // today/upcoming layout stays for 250s and below.
+  if (DAY_SCROLLER_CATEGORIES.has(props.tournament.category)) {
+    return (
+      <LiveTournamentDayBlock
+        tournament={props.tournament}
+        initialLive={props.liveMatches}
+        initialUpcoming={props.upcomingMatches}
+        isBig={props.isBig}
+      />
+    );
+  }
+  return <SmallOngoingTournamentBlock {...props} />;
+}
+
+
+function SmallOngoingTournamentBlock({
   tournament,
   liveMatches,
   upcomingMatches,
