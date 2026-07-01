@@ -149,6 +149,8 @@ function OngoingTournamentBlock({
   // WTA 250 with 2 live matches don't need it.
   const showFilter = total >= 5;
   const [query, setQuery] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
 
   const filteredLive = useMemo(
     () => (showFilter ? liveMatches.filter((m) => matchesQuery(m, query)) : liveMatches),
@@ -178,13 +180,21 @@ function OngoingTournamentBlock({
             <span className="ml-1.5 text-text-muted font-medium">(Qualifying)</span>
           )}
         </Link>
-        {showFilter && (
+        {showFilter && filterOpen && (
           <input
+            ref={inputRef}
             type="search"
-            placeholder="filter names…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="min-w-0 flex-1 border-0 bg-transparent px-1 py-0.5 text-xs text-text-primary placeholder:text-text-muted/70 focus:bg-ink-900/70 focus:outline-none"
+            onBlur={() => { if (!query) setFilterOpen(false); }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setQuery("");
+                setFilterOpen(false);
+                inputRef.current?.blur();
+              }
+            }}
+            className="min-w-0 flex-1 border-0 bg-transparent px-1 py-0.5 text-xs text-text-primary focus:outline-none"
           />
         )}
         <span className="shrink-0 text-[11px] font-semibold text-text-muted">
@@ -192,6 +202,29 @@ function OngoingTournamentBlock({
             ? `${liveMatches.length} live`
             : "Upcoming"}
         </span>
+        {showFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setFilterOpen((v) => !v);
+              // Focus after paint so the input exists in the DOM.
+              requestAnimationFrame(() => inputRef.current?.focus());
+            }}
+            aria-label="Filter matches by player name"
+            className="shrink-0 text-text-muted/70 hover:text-text-secondary"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14" height="14" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              aria-hidden
+            >
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </button>
+        )}
       </div>
       {showFilter && filteredTotal === 0 && query && (
         <div className="border-b border-ink-700 bg-ink-900 px-3 py-3 text-center text-xs text-text-muted">
