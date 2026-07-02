@@ -12,7 +12,13 @@ const SUP_DIGITS: Record<string, string> = {
 };
 
 export function formatSetScore(part: string): string {
-  return part.replace(/\((\d+)\)/g, (_, digits: string) =>
+  // Strip the double-apostrophe wrapping api-tennis puts around
+  // scores from suspended / in-progress sets, e.g. "''2''-''1''"
+  // for a suspended fourth set at 2-1. Purely a formatting quirk
+  // on their end — we surface the number bare, and the SUSPENDED
+  // status pill communicates the "match not complete" context.
+  const unwrapped = part.replace(/''/g, "");
+  return unwrapped.replace(/\((\d+)\)/g, (_, digits: string) =>
     digits.split("").map((d) => SUP_DIGITS[d] ?? d).join(""),
   );
 }
