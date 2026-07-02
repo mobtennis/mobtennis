@@ -58,28 +58,53 @@ export function LiveTournamentDayBlock({
   const [query, setQuery] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
 
-  // Fetch every match for this tournament on mount. Retry-once on
-  // failure so a transient blip doesn't leave the block empty.
+  // Fetch every match for this tournament on mount. Joint brands
+  // like Wimbledon expose both ATP + WTA under one card; the
+  // /matches endpoint is scoped per tour, so we fan out and merge.
+  // Without this, picking "Women's singles" on a joint slam
+  // dropped every match (fetch was ATP-only, filter kept nothing).
+  // Retry-once on failure so a transient blip doesn't leave the
+  // block empty.
   useEffect(() => {
     let cancelled = false;
-    async function load(attempt = 0): Promise<void> {
+    const tours = tournament.tours.length > 0
+      ? tournament.tours
+      : [tournament.tour];
+    async function loadOne(tour: string, attempt = 0): Promise<MatchSummary[]> {
       try {
-        const url = `${API_BASE}/api/tournaments/${tournament.tour}/${tournament.slug}/matches?limit=256`;
+        const url = `${API_BASE}/api/tournaments/${tour}/${tournament.slug}/matches?limit=256`;
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as MatchSummary[];
-        if (!cancelled) {
-          setAllMatches(data);
-          setLoading(false);
+        return (await res.json()) as MatchSummary[];
+      } catch (err) {
+        if (attempt === 0) return loadOne(tour, 1);
+        throw err;
+      }
+    }
+    async function loadAll() {
+      try {
+        const results = await Promise.all(tours.map((t) => loadOne(t)));
+        if (cancelled) return;
+        // Merge + de-dupe on id — a joint brand with a doubles
+        // match tagged as both tours (rare) shouldn't render twice.
+        const seen = new Set<number>();
+        const merged: MatchSummary[] = [];
+        for (const list of results) {
+          for (const m of list) {
+            if (seen.has(m.id)) continue;
+            seen.add(m.id);
+            merged.push(m);
+          }
         }
+        setAllMatches(merged);
+        setLoading(false);
       } catch {
-        if (attempt === 0 && !cancelled) return load(1);
         if (!cancelled) setLoading(false);
       }
     }
-    load();
+    loadAll();
     return () => { cancelled = true; };
-  }, [tournament.tour, tournament.slug]);
+  }, [tournament.tour, tournament.slug, tournament.tours.join("|")]);
 
   // Category filter (men's / women's / singles / doubles) is owned by
   // the top-level MatchFilterBar and shared across the page. Apply it
