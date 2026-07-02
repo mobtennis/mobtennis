@@ -129,11 +129,12 @@ export function LiveTournamentDayBlock({
   const href = `/tournaments/${tournament.tour}/${tournament.slug}`;
   const showFilter = matches.length >= 5;
 
-  // Hide the whole block once we've loaded and the active category
-  // filter (women's / men's / singles / doubles) leaves the
-  // tournament with zero matches. Prevents e.g. an ATP-only slam
-  // still showing an empty scroller when "Women's singles" is on.
-  if (!loading && matches.length === 0) return null;
+  // Empty-under-filter: keep the block visible so Wimbledon (or
+  // whichever slam) doesn't disappear when the user picks a
+  // category the current feed doesn't have (e.g. Women's singles
+  // on a day when only ATP matches are scheduled). We render a
+  // gentle "no matches, adjust filters" state instead.
+  const emptyUnderFilter = !loading && matches.length === 0;
 
   return (
     <div className="overflow-hidden rounded-lg border border-ink-700 bg-ink-900 shadow-card">
@@ -161,9 +162,9 @@ export function LiveTournamentDayBlock({
           />
         )}
         <span className="shrink-0 text-[11px] font-semibold text-text-muted">
-          {loading ? "…" : `${matches.length} matches`}
+          {loading ? "…" : matches.length === 0 ? "" : `${matches.length} matches`}
         </span>
-        {showFilter && (
+        {showFilter && !emptyUnderFilter && (
           <button
             type="button"
             onClick={() => setFilterOpen((v) => !v)}
@@ -178,13 +179,19 @@ export function LiveTournamentDayBlock({
         )}
       </div>
 
-      {days.length > 1 && (
+      {days.length > 1 && !emptyUnderFilter && (
         <div className="border-b border-ink-700 bg-ink-900 px-3 py-2">
           <TournamentDayScroller
             days={days}
             selectedDate={selectedDate}
             onSelect={setSelectedDate}
           />
+        </div>
+      )}
+
+      {emptyUnderFilter && (
+        <div className="px-3 py-6 text-center text-sm text-text-muted">
+          No matches under the current filters. Try adjusting them above.
         </div>
       )}
 
