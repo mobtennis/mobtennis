@@ -2,7 +2,11 @@
 
 import { useEffect, useRef } from "react";
 
-import { dayStatus, type TournamentDay } from "@/lib/tournament-days";
+import {
+  dayChipLabel,
+  dayStatus,
+  type TournamentDay,
+} from "@/lib/tournament-days";
 
 /**
  * Horizontal row of "Day N" chips for a big tournament. Pure UI —
@@ -59,25 +63,16 @@ export function TournamentDayScroller({
               : status === "past"
                 ? "border-ink-700 bg-ink-900 text-text-muted hover:bg-ink-800"
                 : "border-ink-700 bg-ink-900 text-text-secondary hover:bg-ink-800";
-          const detail =
-            day.liveCount > 0
-              ? `${day.liveCount} live`
-              : status === "past"
-                ? `${day.finishedCount} done`
-                : `${day.matchCount} matches`;
           return (
             <button
               key={day.date}
               ref={isSelected ? selectedRef : undefined}
               type="button"
               onClick={() => onSelect(day.date)}
-              className={`min-w-[76px] shrink-0 rounded-md border px-3 py-1.5 text-left transition ${tone}`}
+              className={`shrink-0 rounded-md border px-2.5 py-1 text-xs font-semibold whitespace-nowrap transition ${tone}`}
               aria-current={isSelected ? "true" : undefined}
             >
-              <div className="text-[11px] font-bold uppercase tracking-wider">
-                Day {day.dayNumber}
-              </div>
-              <div className="mt-0.5 text-[10px] opacity-80">{detail}</div>
+              {dayChipLabel(day.date)}
             </button>
           );
         })}

@@ -7,6 +7,7 @@ import { FilterableMatches } from "@/components/FilterableMatches";
 import { TournamentDayScroller } from "@/components/TournamentDayScroller";
 import { type FilterScope, type MatchCategory } from "@/lib/match-filters";
 import {
+  dayChipLabel,
   defaultSelectedDate,
   groupMatchesByDay,
 } from "@/lib/tournament-days";
@@ -48,19 +49,8 @@ export function TournamentDayPanel({
 
   const title = useMemo(() => {
     if (!selectedDate) return `Matches · ${year}`;
-    const idx = days.findIndex((d) => d.date === selectedDate);
-    if (idx < 0) return `Day · ${year}`;
-    const day = days[idx];
-    // Show "Day N · Wed 2 Jul" so the user knows both the ordinal
-    // (matters at slams) and the actual date (matters everywhere else).
-    const asDate = new Date(day.date + "T12:00:00Z");
-    const label = asDate.toLocaleDateString(undefined, {
-      weekday: "short",
-      day: "numeric",
-      month: "short",
-    });
-    return `Day ${day.dayNumber} · ${label}`;
-  }, [days, selectedDate, year]);
+    return `${dayChipLabel(selectedDate)} · ${year}`;
+  }, [selectedDate, year]);
 
   if (days.length === 0) return null;
 

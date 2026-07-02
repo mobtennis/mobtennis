@@ -82,6 +82,31 @@ export function dayStatus(day: TournamentDay): DayStatus {
 }
 
 
+function addUtcDays(date: string, days: number): string {
+  const d = new Date(date + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+
+/**
+ * Human label for a chip. Yesterday / Today / Tomorrow get named
+ * outright; everything else falls back to a short localized date
+ * like "Wed 2 Jul".
+ */
+export function dayChipLabel(date: string): string {
+  const today = new Date().toISOString().slice(0, 10);
+  if (date === today) return "Today";
+  if (date === addUtcDays(today, -1)) return "Yesterday";
+  if (date === addUtcDays(today, 1)) return "Tomorrow";
+  return new Date(date + "T12:00:00Z").toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
+
 /**
  * Categories that get a day scroller. Includes Grand Slams, Finals,
  * 1000s and 500s per the operator's directive. 250s and below stay
