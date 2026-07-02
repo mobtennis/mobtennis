@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { IndexTournament, MatchSummary } from "@/lib/api";
 import { MatchCard } from "@/components/MatchCard";
 import { TournamentDayScroller } from "@/components/TournamentDayScroller";
+import { passesFilter } from "@/lib/match-filters";
+import { useMatchFilters } from "@/lib/match-filters-client";
 import {
   defaultSelectedDate,
   groupMatchesByDay,
@@ -79,7 +81,17 @@ export function LiveTournamentDayBlock({
     return () => { cancelled = true; };
   }, [tournament.tour, tournament.slug]);
 
-  const matches = allMatches ?? [...initialLive, ...initialUpcoming];
+  // Category filter (men's / women's / singles / doubles) is owned by
+  // the top-level MatchFilterBar and shared across the page. Apply it
+  // here BEFORE the day grouping so days without any matches for the
+  // active filter disappear from the scroller — otherwise chips
+  // implied content that wasn't actually shown.
+  const { effective } = useMatchFilters();
+  const rawMatches = allMatches ?? [...initialLive, ...initialUpcoming];
+  const matches = useMemo(
+    () => rawMatches.filter((m) => passesFilter(m, effective)),
+    [rawMatches, effective],
+  );
   const days = useMemo(() => groupMatchesByDay(matches), [matches]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
@@ -116,6 +128,12 @@ export function LiveTournamentDayBlock({
 
   const href = `/tournaments/${tournament.tour}/${tournament.slug}`;
   const showFilter = matches.length >= 5;
+
+  // Hide the whole block once we've loaded and the active category
+  // filter (women's / men's / singles / doubles) leaves the
+  // tournament with zero matches. Prevents e.g. an ATP-only slam
+  // still showing an empty scroller when "Women's singles" is on.
+  if (!loading && matches.length === 0) return null;
 
   return (
     <div className="overflow-hidden rounded-lg border border-ink-700 bg-ink-900 shadow-card">
