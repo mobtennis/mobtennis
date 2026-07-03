@@ -4,6 +4,7 @@ import type { MatchSummary } from "@/lib/api";
 import { formatMatchTime, formatRound, formatScore, formatSetScore } from "@/lib/format";
 import { LiveDot, SuspendedDot } from "@/components/LiveDot";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 
 export function MatchCard({ match, dense = false }: { match: MatchSummary; dense?: boolean }) {
   const sets = formatScore(match.score);
@@ -106,7 +107,7 @@ function PlayerRow({
             [{seed}]
           </span>
         )}
-        {player.full_name}
+        <PlayerHoverCard slug={player.slug}>{player.full_name}</PlayerHoverCard>
         {isServing && (
           <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-accent align-middle" aria-label="serving" />
         )}
