@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
 import { api, type SearchHit } from "@/lib/api";
+import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 
 // Next 15: useSearchParams() forces the page out of static
 // prerendering, so it must live inside a Suspense boundary or the
@@ -93,7 +94,13 @@ function SearchPageInner() {
               <span className={`inline-flex h-6 items-center rounded-full px-2 text-[10px] font-bold uppercase tracking-wider ${h.kind === "player" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
                 {h.kind}
               </span>
-              <span className="flex-1 truncate text-sm font-medium">{h.name}</span>
+              <span className="flex-1 truncate text-sm font-medium">
+                {h.kind === "player" ? (
+                  <PlayerHoverCard slug={h.slug}>{h.name}</PlayerHoverCard>
+                ) : (
+                  h.name
+                )}
+              </span>
               {h.rank && <span className="text-xs text-text-muted">#{h.rank}</span>}
               {h.year && <span className="text-xs text-text-muted">{h.year}</span>}
               <span className="text-[10px] uppercase text-text-muted">{h.tour}</span>

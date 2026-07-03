@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import type { LastEdition } from "@/lib/api";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 import { formatScore, formatSetScore } from "@/lib/format";
 
 export function LastEditionCard({ edition }: { edition: LastEdition }) {
@@ -56,7 +57,9 @@ function PlayerSide({
       />
       <div className="min-w-0">
         {winner && <div className="text-base">🏆</div>}
-        <div className="truncate text-sm font-bold text-text-primary">{player.full_name}</div>
+        <div className="truncate text-sm font-bold text-text-primary">
+          <PlayerHoverCard slug={player.slug}>{player.full_name}</PlayerHoverCard>
+        </div>
       </div>
     </Link>
   );

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import type { LiveRankingRow, RankingRow } from "@/lib/api";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 import { flagEmoji } from "@/lib/format";
 
 type Props = {
@@ -40,7 +41,9 @@ export function RankingsRow({ row, live = false }: Props) {
         href={`/players/${row.player.slug}`}
         className="min-w-0 flex-1 truncate text-sm font-medium hover:text-accent"
       >
-        {row.player.full_name}
+        <PlayerHoverCard slug={row.player.slug}>
+          {row.player.full_name}
+        </PlayerHoverCard>
       </Link>
       <span className="shrink-0 text-xs">{flagEmoji(row.player.country_code)}</span>
       {displayPoints !== null && displayPoints !== undefined && (

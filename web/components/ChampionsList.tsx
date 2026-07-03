@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { BracketGrid } from "@/components/Bracket";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 
 type Props = {
   tour: Tour;
@@ -77,7 +78,7 @@ export function ChampionsList({ tour, slug, initial, initialOffset }: Props) {
                   countryCode={c.champion.country_code}
                 />
                 <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-                  {c.champion.full_name}
+                  <PlayerHoverCard slug={c.champion.slug}>{c.champion.full_name}</PlayerHoverCard>
                 </span>
                 <span className="shrink-0 text-base">🏆</span>
                 <Chevron open={isOpen} />

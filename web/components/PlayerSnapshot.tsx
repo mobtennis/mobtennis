@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { PlayerSnapshot as Snapshot } from "@/lib/api";
+import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 
 /**
  * Editorial paragraph summarising a player's career. Templated, not
@@ -116,7 +117,9 @@ function sentences(s: Snapshot): React.ReactNode[] {
           href={`/h2h/${s.slug}-vs-${s.biggest_rival_slug}`}
           className="text-accent underline decoration-dotted underline-offset-4 hover:text-accent-dim"
         >
-          {s.biggest_rival_name}
+          <PlayerHoverCard slug={s.biggest_rival_slug}>
+            {s.biggest_rival_name}
+          </PlayerHoverCard>
         </Link>
         {" "}
         ({total} meeting{total === 1 ? "" : "s"}, {phrase}).

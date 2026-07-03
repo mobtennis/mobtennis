@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import type { MatchSummary, PlayerSummary } from "@/lib/api";
 import { formatRound, formatSetScore, roundDepth } from "@/lib/format";
+import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 
 const MAIN_DRAW_MIN_DEPTH = 40;
 
@@ -343,6 +344,7 @@ function MatchCell({
     >
       <Row
         name={topPlayer?.full_name ?? "TBD"}
+        slug={topPlayer?.slug ?? null}
         seed={topSeed}
         sets={topSets}
         bold={topWon}
@@ -352,6 +354,7 @@ function MatchCell({
       <div className="border-t border-ink-700/60" />
       <Row
         name={bottomPlayer?.full_name ?? "TBD"}
+        slug={bottomPlayer?.slug ?? null}
         seed={bottomSeed}
         sets={bottomSets}
         bold={bottomWon}
@@ -412,6 +415,7 @@ function ProjectedRow({ player }: { player: PlayerSummary | null }) {
 
 function Row({
   name,
+  slug,
   seed,
   sets,
   bold,
@@ -419,6 +423,7 @@ function Row({
   winner,
 }: {
   name: string;
+  slug?: string | null;
   seed?: number | null;
   sets: string[];
   bold: boolean;
@@ -434,7 +439,7 @@ function Row({
         {seed != null && (
           <span className="mr-1 text-[10px] text-text-muted tabular-nums">[{seed}]</span>
         )}
-        {name}
+        {slug ? <PlayerHoverCard slug={slug}>{name}</PlayerHoverCard> : name}
       </span>
       <div className="flex items-center gap-1 tabular-nums">
         {sets.map((s, i) => (

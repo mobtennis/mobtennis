@@ -7,6 +7,7 @@ import { LiveDot, SuspendedDot } from "@/components/LiveDot";
 import { LiveMatchListener } from "@/components/LiveMatchListener";
 import { MatchStatsPanel } from "@/components/MatchStatsPanel";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 import { TrackOnMount } from "@/components/TrackOnMount";
 import { VideoCard } from "@/components/VideoCard";
 import { EVENTS } from "@/lib/analytics";
@@ -155,7 +156,10 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
           href={`/h2h/${match.player1.slug}-vs-${match.player2.slug}`}
           className="block rounded-md border border-ink-700 bg-ink-900 px-3 py-3 text-center text-sm font-medium hover:border-ink-600"
         >
-          Head-to-head: {match.player1.full_name} vs {match.player2.full_name}
+          Head-to-head:{" "}
+          <PlayerHoverCard slug={match.player1.slug}>{match.player1.full_name}</PlayerHoverCard>
+          {" vs "}
+          <PlayerHoverCard slug={match.player2.slug}>{match.player2.full_name}</PlayerHoverCard>
         </Link>
       )}
 
@@ -213,7 +217,7 @@ function PlayerLine({
           {seed != null && (
             <span className="mr-1.5 text-xs font-normal text-text-muted tabular-nums">[{seed}]</span>
           )}
-          {player.full_name}
+          <PlayerHoverCard slug={player.slug}>{player.full_name}</PlayerHoverCard>
         </span>
         {/* `shrink-0` so the dot survives a long name being truncated. */}
         {serving && (

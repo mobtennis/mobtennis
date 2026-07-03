@@ -6,6 +6,7 @@ import { ChangeOpponentLink } from "@/components/ChangeOpponentLink";
 import { H2HOverview } from "@/components/H2HOverview";
 import { OpponentPicker } from "@/components/OpponentPicker";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 import { TournamentGroups } from "@/components/TournamentGroup";
 import { SectionHeader } from "@/components/SectionHeader";
 import { surfaceColor } from "@/lib/format";
@@ -73,7 +74,9 @@ export default async function H2HPage({ params }: { params: Promise<{ matchup: s
           <div className="flex flex-col items-center gap-2">
             <Link href={`/players/${data.player1.slug}`} className="flex flex-col items-center gap-2">
               <PlayerAvatar name={data.player1.full_name} imageUrl={data.player1.image_url} countryCode={data.player1.country_code} size="md" />
-              <span className="line-clamp-1 text-sm font-semibold">{data.player1.full_name}</span>
+              <span className="line-clamp-1 text-sm font-semibold">
+                <PlayerHoverCard slug={data.player1.slug}>{data.player1.full_name}</PlayerHoverCard>
+              </span>
             </Link>
             <ChangeOpponentLink anchorSlug={data.player2.slug} tourFilter={data.player2.tour} />
           </div>
@@ -86,7 +89,9 @@ export default async function H2HPage({ params }: { params: Promise<{ matchup: s
           <div className="flex flex-col items-center gap-2">
             <Link href={`/players/${data.player2.slug}`} className="flex flex-col items-center gap-2">
               <PlayerAvatar name={data.player2.full_name} imageUrl={data.player2.image_url} countryCode={data.player2.country_code} size="md" />
-              <span className="line-clamp-1 text-sm font-semibold">{data.player2.full_name}</span>
+              <span className="line-clamp-1 text-sm font-semibold">
+                <PlayerHoverCard slug={data.player2.slug}>{data.player2.full_name}</PlayerHoverCard>
+              </span>
             </Link>
             <ChangeOpponentLink anchorSlug={data.player1.slug} tourFilter={data.player1.tour} />
           </div>
@@ -152,7 +157,9 @@ function PartialH2HShell({
         countryCode={anchor.country_code}
         size="md"
       />
-      <span className="line-clamp-1 text-sm font-semibold">{anchor.full_name}</span>
+      <span className="line-clamp-1 text-sm font-semibold">
+        <PlayerHoverCard slug={anchor.slug}>{anchor.full_name}</PlayerHoverCard>
+      </span>
     </Link>
   );
   const pickerBlock = (
