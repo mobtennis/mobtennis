@@ -11,7 +11,8 @@ import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 import { TrackOnMount } from "@/components/TrackOnMount";
 import { VideoCard } from "@/components/VideoCard";
 import { EVENTS } from "@/lib/analytics";
-import { formatScore, formatSetScore, formatTime } from "@/lib/format";
+import { formatScore, formatSetScore } from "@/lib/format";
+import { LocalTime } from "@/components/LocalTime";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -117,7 +118,7 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
 
         {!isLive && !isSuspended && match.scheduled_at && (
           <div className="mt-3 text-center text-xs text-text-muted">
-            {formatTime(match.scheduled_at)}
+            <LocalTime iso={match.scheduled_at} variant="time" />
           </div>
         )}
         {isSuspended && (

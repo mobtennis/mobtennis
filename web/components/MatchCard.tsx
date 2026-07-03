@@ -1,8 +1,9 @@
 import Link from "next/link";
 
 import type { MatchSummary } from "@/lib/api";
-import { formatMatchTime, formatRound, formatScore, formatSetScore } from "@/lib/format";
+import { formatRound, formatScore, formatSetScore } from "@/lib/format";
 import { LiveDot, SuspendedDot } from "@/components/LiveDot";
+import { LocalTime } from "@/components/LocalTime";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 
@@ -61,7 +62,7 @@ export function MatchCard({ match, dense = false }: { match: MatchSummary; dense
             // tell "tonight" from "Wednesday" at a glance. Empty when api-tennis
             // hasn't published the time yet (NULL scheduled_at).
             <span className="text-xs tnum text-text-secondary">
-              {formatMatchTime(match.scheduled_at) || "TBD"}
+              <LocalTime iso={match.scheduled_at} variant="match" fallback="TBD" />
             </span>
           ) : null}
           {/* Tour pill — sits between status and round labels in the
