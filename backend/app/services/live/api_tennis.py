@@ -171,7 +171,19 @@ class ApiTennisProvider(LiveScoresProvider):
         # event_live is "1" for live matches per api-tennis docs.
         is_live = str(row.get("event_live") or "").strip() == "1"
         winner_raw = (row.get("event_winner") or "").strip()
-        status = self._derive_status(is_live, winner_raw, row.get("event_status"))
+        # A row can carry a real in-progress score while event_live is
+        # unset — happens on get_fixtures for matches that started after
+        # today's schedule was cached, and between-sets briefly. If the
+        # scores array has any actual game count on it and there's no
+        # winner yet, the match is in progress regardless of the flag.
+        has_score = any(
+            (str(s.get("score_first") or "").strip() not in ("", "0"))
+            or (str(s.get("score_second") or "").strip() not in ("", "0"))
+            for s in (row.get("scores") or [])
+        )
+        status = self._derive_status(
+            is_live, winner_raw, row.get("event_status"), has_score,
+        )
 
         winner: int | None = None
         if winner_raw == "First Player":
@@ -288,7 +300,12 @@ class ApiTennisProvider(LiveScoresProvider):
         return " ".join(out) or None
 
     @staticmethod
-    def _derive_status(is_live: bool, winner_raw: str, status_raw: str | None) -> str:
+    def _derive_status(
+        is_live: bool,
+        winner_raw: str,
+        status_raw: str | None,
+        has_score: bool = False,
+    ) -> str:
         s = (status_raw or "").lower()
         if winner_raw:
             if "ret" in s:
@@ -308,6 +325,14 @@ class ApiTennisProvider(LiveScoresProvider):
             return "cancelled"
         if "postpon" in s:
             return "postponed"
+        # Fallback: a match with a real score but no live flag and no
+        # winner is still in progress. Happens when get_fixtures
+        # returns an already-started match whose event_live cell
+        # hasn't been flipped yet, or during a brief between-sets
+        # window. Prefer "live" here over "scheduled" — the score
+        # itself is the strongest signal.
+        if has_score:
+            return "live"
         return "scheduled"
 
     @staticmethod
