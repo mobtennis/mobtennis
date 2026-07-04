@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useMemo } from "react";
 
 import type { MatchSummary } from "@/lib/api";
 import { formatRound, formatScore, formatSetScore } from "@/lib/format";
@@ -6,8 +9,17 @@ import { LiveDot, SuspendedDot } from "@/components/LiveDot";
 import { LocalTime } from "@/components/LocalTime";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { PlayerHoverCard } from "@/components/PlayerHoverCard";
+import { useLiveMatch } from "@/lib/live-stream";
 
-export function MatchCard({ match, dense = false }: { match: MatchSummary; dense?: boolean }) {
+export function MatchCard({ match: initial, dense = false }: { match: MatchSummary; dense?: boolean }) {
+  // Overlay any live update from the shared SSE stream so scores
+  // move sub-second without a Next.js router refresh. The initial
+  // MatchSummary comes from SSR; subsequent updates are pushed
+  // straight from api-tennis via /api/stream. See lib/live-stream.
+  const live = useLiveMatch(initial.id);
+  const match = useMemo<MatchSummary>(() => (
+    live ? { ...initial, ...live } : initial
+  ), [initial, live]);
   const sets = formatScore(match.score);
   const isLive = match.status === "live";
   const isSuspended = match.status === "suspended";
