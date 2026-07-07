@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, func, select
 
-from app.api._helpers import match_to_summary, player_summary
+from app.api._helpers import (
+    exclude_junior_rounds,
+    match_to_summary,
+    player_summary,
+)
 from app.data.tournament_records import get_records
 from app.db.session import get_session
 from app.models.match import Match, MatchStatus
@@ -872,12 +876,20 @@ def tournament_matches_current(
         raise HTTPException(404, "Tournament not found")
     stmt = (
         select(Match)
+        .join(Tournament, Tournament.id == Match.tournament_id)
         .where(Match.tournament_id == t.id)
         .where(
             ~Match.round.contains(" - ")
             | Match.status.in_([MatchStatus.LIVE, MatchStatus.SUSPENDED])
         )
     )
+    # The LIVE/SUSPENDED escape hatch above (added so in-progress
+    # main-draw matches aren't dropped while still carrying api-tennis's
+    # verbose label) also let live JUNIOR matches through — the blanket
+    # " - " filter used to catch those. Re-apply the junior exclusion
+    # explicitly. Needs the Tournament join for its null-round-at-Slam
+    # guard, hence the join above.
+    stmt = exclude_junior_rounds(stmt)
     if status:
         from app.api._helpers import filter_status
         stmt = filter_status(stmt, status)
