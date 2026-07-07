@@ -849,6 +849,17 @@ def tournament_matches_current(
     bracket / matches list) doesn't render them — but they squeeze
     real main-draw matches past the limit cap, producing phantom
     TBD slots on the bracket.
+
+    "Filtered out" is approximated as "round still carries api-tennis's
+    verbose prefix" (`"ATP Wimbledon - Quarter-finals"` — everything with
+    a " - " separator). The assumption is that a real main-draw match has
+    already been rewritten to a short code (QF, R128, …) by the Wikipedia
+    bracket scraper. That assumption breaks for a match that is LIVE right
+    now: it hasn't been reconstructed yet, so it still has the verbose
+    label and was wrongly dropped (Sinner vanishing off the live page mid-
+    QF). We therefore also keep LIVE/SUSPENDED rows regardless of label —
+    qualifying is long finished by main-draw time, so this doesn't let
+    qualifying back in.
     """
     canonical = _canonical_url_slug(slug)
     cache_key = (tour.value, canonical, status, limit)
@@ -862,7 +873,10 @@ def tournament_matches_current(
     stmt = (
         select(Match)
         .where(Match.tournament_id == t.id)
-        .where(~Match.round.contains(" - "))
+        .where(
+            ~Match.round.contains(" - ")
+            | Match.status.in_([MatchStatus.LIVE, MatchStatus.SUSPENDED])
+        )
     )
     if status:
         from app.api._helpers import filter_status
