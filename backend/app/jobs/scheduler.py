@@ -694,6 +694,9 @@ async def _generate_weekly_digest_job() -> None:
 
 
 def start_scheduler() -> None:
+    # NOTE: if you add/remove/re-time a job below, update the job table in
+    # deploy/SCHEDULED_JOBS.md in the same change — it's the operator-facing
+    # index and goes stale fast otherwise.
     global _scheduler, _live_task
     if _scheduler:
         return
@@ -817,39 +820,54 @@ def start_scheduler() -> None:
     )
     # Boot trigger removed — see sync_rankings_boot note.
 
-    # Player socials (Wikidata) — weekly + on boot. Walks top 200 ATP/WTA;
-    # one player every ~500ms so a full run takes ~3 min on cold start, and
-    # the staleness window keeps re-runs cheap.
+    # ------------------------------------------------------------------
+    # Weekly jobs — each pinned to its own day at 02:00 UTC rather than
+    # IntervalTrigger(weeks=1). IntervalTrigger fires one week after the
+    # last boot, so they used to land within seconds of each other on
+    # whatever day/time we last deployed — a weekly HTTP-heavy pile-up.
+    # Spreading them across the week keeps at most one heavy weekly job
+    # per day, off the 04:00–06:00 daily-cron cluster, and clear of the
+    # Monday rankings/digest rush. Order matters once: bios depends on
+    # socials having populated wikidata_ids, so socials (Tue) runs a day
+    # before bios (Wed). If you add another weekly job, give it its own
+    # free day here (Fri–Sun are open).
+    # 02:00 UTC, day_of_week:  Tue socials · Wed bios · Thu images
+    # ------------------------------------------------------------------
+
+    # Player socials (Wikidata). Walks top 200 ATP/WTA; one player every
+    # ~500ms so a full run takes ~3 min, and the staleness window keeps
+    # re-runs cheap.
     _scheduler.add_job(
         _enrich_player_socials_job,
-        IntervalTrigger(weeks=1),
+        CronTrigger(day_of_week="tue", hour=2, minute=0),
         id="enrich_player_socials",
         max_instances=1,
         coalesce=True,
+        misfire_grace_time=3600,
     )
-    # Boot trigger removed — weekly cadence handles new players over time.
 
-    # Player bios — runs ~30s after boot, after the socials job has had a
-    # chance to populate wikidata_ids, then weekly.
+    # Player bios — the day after socials, so the wikidata_id pool it reads
+    # from is freshly filled.
     _scheduler.add_job(
         _enrich_player_bios_job,
-        IntervalTrigger(weeks=1),
+        CronTrigger(day_of_week="wed", hour=2, minute=0),
         id="enrich_player_bios",
         max_instances=1,
         coalesce=True,
+        misfire_grace_time=3600,
     )
-    # Boot trigger removed — weekly cadence is fine.
 
     # Player photo collection (Wikipedia infobox + article + Commons
-    # category). Weekly — new photos appear during tournaments as
-    # editors upload event galleries; weekly catches them within days
-    # of upload without battering the public MediaWiki API.
+    # category). New photos appear during tournaments as editors upload
+    # event galleries; weekly catches them within days of upload without
+    # battering the public MediaWiki API.
     _scheduler.add_job(
         _enrich_player_images_job,
-        IntervalTrigger(weeks=1),
+        CronTrigger(day_of_week="thu", hour=2, minute=0),
         id="enrich_player_images",
         max_instances=1,
         coalesce=True,
+        misfire_grace_time=3600,
     )
 
     # Tournament enrichment (Wikipedia blurbs + images) — runs after catalog
