@@ -185,6 +185,84 @@ def _rounds_match(short_or_verbose: str, other: str) -> bool:
     return False
 
 
+def reconcile_orphan_duplicates(
+    session: Session, tournament_id: int | None = None
+) -> int:
+    """One-shot cleanup: fold api-tennis match rows into the orphan
+    Wikipedia-bracket row for the same (tournament, player pair, round).
+
+    This is the retroactive form of the orphan adoption `upsert_live_matches`
+    does at ingest. Adoption keys on player *id*, so when a player was
+    represented by two un-deduped rows (e.g. "J-L. Struff" from api-tennis
+    vs "Jan Lennard Struff" from Wikipedia) the pair never matched and two
+    Match rows survived — a scheduled bracket slot and a separate live row.
+    Run this AFTER a player-dedup pass has collapsed the player rows, so the
+    pairs finally line up.
+
+    Pass `tournament_id` to scope the sweep to one tournament — the whole-DB
+    sweep is O(api_rows × candidates) and slow; a targeted cleanup should
+    stay scoped.
+
+    For each api-tennis-sourced row we look for an orphan bracket row and,
+    if found, fold the live data onto the orphan (which owns bracket_position)
+    and delete the api-tennis row. The orphan inherits api_tennis_id so future
+    WS updates land on it. Returns the number of rows folded away.
+    """
+    stmt = select(Match).where(Match.api_tennis_id.is_not(None))
+    if tournament_id is not None:
+        stmt = stmt.where(Match.tournament_id == tournament_id)
+    api_rows = session.exec(stmt).all()
+    folded = 0
+    for m in api_rows:
+        if m.player1_id is None or m.player2_id is None:
+            continue
+        orphan = _find_orphan_wiki_row(
+            session,
+            tournament_id=m.tournament_id,
+            p1_id=m.player1_id,
+            p2_id=m.player2_id,
+            round_label=m.round or "",
+            is_doubles=m.is_doubles,
+        )
+        if orphan is None or orphan.id == m.id:
+            continue
+        # Snapshot the live fields, then delete + flush the api-tennis row
+        # BEFORE writing api_tennis_id onto the orphan. matches.api_tennis_id
+        # is UNIQUE, so assigning it while the source row still holds it
+        # trips the constraint on autoflush.
+        api_id = m.api_tennis_id
+        live = dict(
+            status=m.status, score=m.score, current_set=m.current_set,
+            current_game=m.current_game, server_player_id=m.server_player_id,
+            winner_id=m.winner_id, scheduled_at=m.scheduled_at,
+            finished_at=m.finished_at, best_of=m.best_of,
+        )
+        session.delete(m)
+        session.flush()
+        # Keep the orphan (it owns bracket_position); fold the live fields.
+        if orphan.api_tennis_id is None:
+            orphan.api_tennis_id = api_id
+        orphan.status = live["status"]
+        if live["score"]:
+            orphan.score = live["score"]
+        orphan.current_set = live["current_set"]
+        orphan.current_game = live["current_game"]
+        orphan.server_player_id = live["server_player_id"]
+        if live["winner_id"] is not None:
+            orphan.winner_id = live["winner_id"]
+        if live["scheduled_at"] is not None and orphan.scheduled_at is None:
+            orphan.scheduled_at = live["scheduled_at"]
+        if live["finished_at"] is not None and orphan.finished_at is None:
+            orphan.finished_at = live["finished_at"]
+        if not orphan.best_of and live["best_of"]:
+            orphan.best_of = live["best_of"]
+        session.add(orphan)
+        folded += 1
+    if folded:
+        session.commit()
+    return folded
+
+
 def _find_orphan_wiki_row(
     session: Session,
     *,

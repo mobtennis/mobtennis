@@ -106,6 +106,7 @@ def merge_duplicates(session: Session) -> int:
             if dup.id == canonical.id:
                 continue
             _repoint(session, from_id=dup.id, to_id=canonical.id)
+            _adopt_fuller_name(canonical, dup)
             # Promote any non-null fields from dup that canonical lacks
             # (a safety net for orthogonal info on dupes).
             for field in (
@@ -126,6 +127,62 @@ def merge_duplicates(session: Session) -> int:
             len(members) - 1, canonical.slug, canonical.full_name, tour.value,
         )
     return merged
+
+
+def _name_fullness(name: str | None) -> int:
+    """Count the full (non-initial) tokens in a name. "Jan Lennard Struff"
+    → 3, "J-L. Struff" → 1. Used to keep the more human-readable spelling
+    when a merge has to choose between an abbreviated and a spelled-out
+    form of the same player."""
+    if not name:
+        return 0
+    return sum(1 for t in (slugify(name) or "").split("-") if len(t) > 1)
+
+
+def _adopt_fuller_name(canonical: Player, dup: Player) -> None:
+    """If the dup spells the name out more fully than the canonical row
+    (which we keep for its api_tennis_id, not its prettier name), take the
+    dup's full_name so we don't regress "Jan Lennard Struff" to
+    "J-L. Struff". Slug is intentionally left alone — it's a URL identity."""
+    if _name_fullness(dup.full_name) > _name_fullness(canonical.full_name):
+        canonical.full_name = dup.full_name
+        canonical.name_key = name_key(dup.full_name)
+
+
+_PROMOTABLE_FIELDS = (
+    "first_name", "last_name", "birth_date", "height_cm", "plays",
+    "turned_pro", "sackmann_id", "api_tennis_id", "current_rank",
+    "career_high_rank", "image_url", "bio", "wikidata_id",
+    "wikipedia_url", "instagram_handle", "twitter_handle",
+    "instagram_latest_post_url", "country_code",
+)
+
+
+def merge_player_pair(session: Session, id_a: int, id_b: int) -> int | None:
+    """Merge two known-duplicate player rows and commit. Returns the id of
+    the surviving canonical row (None if either id is missing).
+
+    A targeted alternative to the whole-DB `merge_*` sweeps for when you've
+    already identified a specific duplicate pair (e.g. an api-tennis
+    initials row and its Wikipedia spelled-out twin). Same canonical-pick,
+    repoint, name-preservation and field-promotion rules as the sweeps.
+    """
+    a = session.get(Player, id_a)
+    b = session.get(Player, id_b)
+    if a is None or b is None:
+        return None
+    canonical = _pick_canonical(session, [a, b])
+    dup = b if canonical.id == a.id else a
+    _repoint(session, from_id=dup.id, to_id=canonical.id)
+    _adopt_fuller_name(canonical, dup)
+    for field in _PROMOTABLE_FIELDS:
+        if getattr(canonical, field) is None and getattr(dup, field) is not None:
+            setattr(canonical, field, getattr(dup, field))
+    session.add(canonical)
+    session.delete(dup)
+    session.commit()
+    log.info("merged player %d into %d (%s)", dup.id, canonical.id, canonical.full_name)
+    return canonical.id
 
 
 def _pick_canonical(session: Session, members: list[Player]) -> Player:
@@ -223,12 +280,22 @@ def dedupe_rankings(session: Session) -> int:
 
 
 def _fuzzy_initial_match(name_a: str, name_b: str) -> bool:
-    """True if these two names look like the same person where one uses
-    a single-initial form for one of the tokens.
+    """True if these two names look like the same person where one form
+    abbreviates one or more given-name tokens to initials.
 
-    "A. Tabilo" vs "Alejandro Tabilo"  → True
-    "Alex Smith" vs "Andrew Smith"     → False (different full first names)
+    "A. Tabilo" vs "Alejandro Tabilo"            → True (one initial)
+    "J-L. Struff" vs "Jan Lennard Struff"        → True (two initials)
+    "Alex Smith" vs "Andrew Smith"               → False (different full first names)
     "T. Etcheverry" vs "Tomas Martin Etcheverry" → False (different token count)
+    "J. L." vs "Jan Lennard"                     → False (no shared full-name anchor)
+
+    Rules: same token count; every token pair is either identical or an
+    initial-vs-full where the full token starts with the initial; at
+    least one pair actually differs (else it's a plain name_key match,
+    handled elsewhere); and at least one *identical* pair is a full token
+    (len > 1) so the surname anchors the match. The anchor is what keeps
+    a bare-initials form ("J. L.") from colliding with an unrelated full
+    name — without a shared real word there's nothing tying them together.
     """
     if not name_a or not name_b:
         return False
@@ -237,10 +304,13 @@ def _fuzzy_initial_match(name_a: str, name_b: str) -> bool:
     if not a or not b or len(a) != len(b):
         return False
     diff_pairs = 0
+    shared_full_token = False
     for x, y in zip(a, b):
         if x == y:
+            if len(x) > 1:
+                shared_full_token = True
             continue
-        # Exactly one pair may differ, and only by initial-vs-full where the
+        # A differing pair is only allowed as initial-vs-full where the
         # full token starts with the initial letter.
         if len(x) == 1 and len(y) > 1 and y.startswith(x):
             diff_pairs += 1
@@ -248,7 +318,7 @@ def _fuzzy_initial_match(name_a: str, name_b: str) -> bool:
             diff_pairs += 1
         else:
             return False
-    return diff_pairs == 1
+    return diff_pairs >= 1 and shared_full_token
 
 
 def merge_initial_form_duplicates(session: Session) -> int:
@@ -318,6 +388,7 @@ def merge_initial_form_duplicates(session: Session) -> int:
                     continue
 
                 _repoint(session, from_id=dup_id, to_id=canonical_id)
+                _adopt_fuller_name(canonical, dup)
                 # Promote any non-null fields from dup that canonical lacks.
                 for field in (
                     "first_name", "last_name", "birth_date", "height_cm", "plays",
