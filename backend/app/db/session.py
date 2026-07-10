@@ -112,6 +112,9 @@ def _migrate() -> None:
         ("editorial_digests", "campaign_briefs_json", "TEXT"),
         ("editorial_digests", "period_start", "DATETIME"),
         ("editorial_digests", "period_end", "DATETIME"),
+        # Inline article images (JSON list of {url, credit, credit_url,
+        # caption, anchor}). Nullable — old digests have no images.
+        ("editorial_digests", "images_json", "TEXT"),
         # Call the Shot moved from a flat item list to set + items in
         # the same shape as STB/NTP. Items get an FK + position once
         # the bundler assigns them; both nullable so old rows survive.

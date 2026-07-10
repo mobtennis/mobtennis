@@ -132,6 +132,9 @@ def _collect_news(session: Session, start_dt: datetime, end_dt: datetime) -> lis
             "title": n.title.strip(),
             "summary": _strip_html(n.summary),
             "url": n.source_url,
+            "image_url": n.image_url,
+            "player_slugs": n.player_slugs,
+            "tournament_slugs": n.tournament_slugs,
         })
         if len(out) >= _NEWS_CAP:
             break
@@ -1127,6 +1130,100 @@ class DigestResult:
         return self.row is not None
 
 
+# Display labels for our feed source keys — the credit shown on an
+# inline image. Anything not listed is title-cased from its slug.
+_SOURCE_LABELS = {
+    "espn": "ESPN",
+    "bbc": "BBC Sport",
+    "guardian": "The Guardian",
+    "tennis365": "Tennis365",
+    "the-tennis-podcast": "The Tennis Podcast",
+}
+
+
+def _source_label(key: str | None) -> str:
+    if not key:
+        return "News"
+    return _SOURCE_LABELS.get(key, key.replace("-", " ").title())
+
+
+def select_digest_images(session: Session, facts: dict) -> list[dict]:
+    """Pick up to two inline images for the article, most editorial first.
+
+    Priority (per the product call): news-wire share images — the photo
+    the publisher itself attached to the story — each credited and linked
+    back to the source (publisher-intended syndication use). Falls back to
+    our licensed player Commons photos when no story carries a usable
+    image. Each dict is {url, credit, credit_url, caption, anchor} with
+    anchor "lead" | "mid"; the frontend interleaves them into the prose.
+
+    Live-resolves a story's og:image when ingest didn't capture one and
+    writes it back to the NewsItem so cards + future digests reuse it.
+    """
+    from app.services.news import fetch_og_image
+
+    images: list[dict] = []
+    used: set[str] = set()
+
+    # --- 1) News-wire images (primary) ---------------------------------
+    # Stories tied to a player/tournament the digest is about lead; the
+    # list is already newest-first within that.
+    news = sorted(
+        facts.get("news") or [],
+        key=lambda n: 0 if (n.get("player_slugs") or n.get("tournament_slugs")) else 1,
+    )
+    og_budget = 4  # bound live fetches during a single generation
+    for n in news:
+        if len(images) >= 2:
+            break
+        url = (n.get("url") or "").strip()
+        img = (n.get("image_url") or "").strip() or None
+        if not img and og_budget > 0:
+            img = fetch_og_image(url)
+            og_budget -= 1
+            if img and url:
+                row = session.exec(
+                    select(NewsItem).where(NewsItem.source_url == url)
+                ).first()
+                if row and not row.image_url:
+                    row.image_url = img
+                    session.add(row)
+        if not img or img in used:
+            continue
+        used.add(img)
+        images.append({
+            "url": img,
+            "credit": _source_label(n.get("source")),
+            "credit_url": url or None,
+            "caption": ((n.get("title") or "").strip()[:140]) or None,
+            "anchor": "lead" if not images else "mid",
+        })
+
+    # --- 2) Licensed player photo fallback -----------------------------
+    if len(images) < 2:
+        champ_slugs: list[str] = []
+        for f in facts.get("finals", []) + facts.get("lower_tier_finals", []):
+            s = f.get("champion_slug")
+            if s and s not in champ_slugs:
+                champ_slugs.append(s)
+        for slug in champ_slugs:
+            if len(images) >= 2:
+                break
+            p = session.exec(select(Player).where(Player.slug == slug)).first()
+            if not p or not p.image_url or p.image_url in used:
+                continue
+            used.add(p.image_url)
+            images.append({
+                "url": p.image_url,
+                "credit": p.image_credit or "Wikimedia Commons",
+                "credit_url": p.image_license_url or p.wikipedia_url,
+                "caption": p.full_name,
+                "anchor": "lead" if not images else "mid",
+            })
+
+    return images
+
+
 def generate_digest(
     session: Session,
     *,
@@ -1243,6 +1340,11 @@ def generate_digest(
         body, facts.get("links", {}), news=facts.get("news"),
     )
     briefs_blob = json.dumps(campaign_briefs) if campaign_briefs else None
+    # Inline article images — news-wire share photos (credited + linked)
+    # with a licensed player-photo fallback. Computed after the body is
+    # final so future work could anchor images to what the prose mentions.
+    images = select_digest_images(session, facts)
+    images_blob = json.dumps(images) if images else None
     # Pack the LLM-self-reported source citations into source_json
     # alongside the input facts — readers see them in the digest UI,
     # and audits get the model's own view of which news it used.
@@ -1254,6 +1356,7 @@ def generate_digest(
         same_anchor.body_md = body
         same_anchor.source_json = json.dumps(facts_with_sources)
         same_anchor.campaign_briefs_json = briefs_blob
+        same_anchor.images_json = images_blob
         same_anchor.model_name = MODEL_NAME
         same_anchor.period_start = period_start
         same_anchor.period_end = period_end
@@ -1271,6 +1374,7 @@ def generate_digest(
         body_md=body,
         source_json=json.dumps(facts_with_sources),
         campaign_briefs_json=briefs_blob,
+        images_json=images_blob,
         model_name=MODEL_NAME,
     )
     session.add(row)

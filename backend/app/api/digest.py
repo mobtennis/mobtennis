@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 
 from app.db.session import get_session
 from app.models.digest import EditorialDigest
-from app.schemas.digest import DigestDetail, DigestSummary, NewsSource
+from app.schemas.digest import DigestDetail, DigestImage, DigestSummary, NewsSource
 
 router = APIRouter(prefix="/api/digests", tags=["digests"])
 
@@ -77,6 +77,14 @@ def _to_detail(row: EditorialDigest) -> DigestDetail:
                     sources.append(NewsSource(title=title, url=url, source=src))
         except (ValueError, AttributeError):
             sources = []
+    images: list[DigestImage] = []
+    if row.images_json:
+        try:
+            for item in (json.loads(row.images_json) or []):
+                if isinstance(item, dict) and (item.get("url") or "").strip():
+                    images.append(DigestImage(**item))
+        except (ValueError, AttributeError, TypeError):
+            images = []
     return DigestDetail(
         week_start=row.week_start,
         headline=row.headline,
@@ -84,6 +92,7 @@ def _to_detail(row: EditorialDigest) -> DigestDetail:
         body_md=row.body_md,
         model_name=row.model_name,
         news_sources=sources,
+        images=images,
         period_start=row.period_start,
         period_end=row.period_end,
     )

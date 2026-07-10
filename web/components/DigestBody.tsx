@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import type { DigestImage } from "@/lib/api";
+
 /**
  * Renders a digest body paragraph, turning inline markdown links of
  * the form `[Display text](url)` into either <Link> (internal slugs)
@@ -15,13 +17,110 @@ import Link from "next/link";
  *
  * No general markdown is supported: no bold, italics, lists, or
  * headers. Body is a single paragraph by design.
+ *
+ * Images (optional): a "lead" image renders above the prose; a "mid"
+ * image is interleaved by splitting the paragraph at a sentence
+ * boundary near its midpoint, so it reads like a proper news article.
  */
-export function DigestBody({ body }: { body: string }) {
+export function DigestBody({
+  body,
+  images = [],
+}: {
+  body: string;
+  images?: DigestImage[];
+}) {
+  const lead = images.find((i) => i.anchor === "lead") ?? null;
+  const mid = images.find((i) => i.anchor === "mid") ?? null;
+  const [first, second] = mid ? splitForMid(body) : [body, ""];
+
   return (
-    <p className="whitespace-pre-line text-[15px] leading-7 text-text-secondary">
-      {renderInlineLinks(body)}
-    </p>
+    <>
+      {lead && <Figure image={lead} />}
+      <p className="whitespace-pre-line text-[15px] leading-7 text-text-secondary">
+        {renderInlineLinks(first)}
+      </p>
+      {mid && (second ? (
+        <>
+          <Figure image={mid} />
+          <p className="mt-4 whitespace-pre-line text-[15px] leading-7 text-text-secondary">
+            {renderInlineLinks(second)}
+          </p>
+        </>
+      ) : (
+        // Couldn't find a clean split point — show it after the prose
+        // rather than dropping it.
+        <Figure image={mid} />
+      ))}
+    </>
   );
+}
+
+function Figure({ image }: { image: DigestImage }) {
+  const hasCaption = Boolean(image.caption || image.credit);
+  return (
+    <figure className="my-4 overflow-hidden rounded-lg border border-ink-700 bg-ink-800">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={image.url}
+        alt={image.caption ?? ""}
+        className="max-h-[420px] w-full object-cover"
+        loading="lazy"
+      />
+      {hasCaption && (
+        <figcaption className="px-3 py-2 text-[11px] leading-4 text-text-muted">
+          {image.caption && (
+            <span className="text-text-secondary">{image.caption}</span>
+          )}
+          {image.credit && (
+            <>
+              {image.caption ? " · " : ""}
+              {image.credit_url ? (
+                <a
+                  href={image.credit_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-dotted underline-offset-2 hover:text-text-secondary"
+                >
+                  {image.credit}
+                </a>
+              ) : (
+                image.credit
+              )}
+            </>
+          )}
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
+/**
+ * Split the body into two halves at the sentence boundary nearest the
+ * midpoint, so a "mid" image sits between two runs of prose. Boundaries
+ * inside a `[text](url)` markdown link are ignored so we never cut a
+ * link in half. Returns ["", ""]-safe: falls back to [body, ""] when no
+ * usable boundary exists (e.g. a single-sentence body).
+ */
+export function splitForMid(body: string): [string, string] {
+  // Mask link spans so a period inside a URL/label isn't a split point.
+  const linkRanges: Array<[number, number]> = [];
+  for (const m of body.matchAll(LINK_RE)) {
+    const idx = m.index ?? 0;
+    linkRanges.push([idx, idx + m[0].length]);
+  }
+  const inLink = (i: number) => linkRanges.some(([a, b]) => i >= a && i < b);
+
+  const mid = body.length / 2;
+  let best = -1;
+  const re = /[.!?]\s+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    const cut = m.index + 1; // keep the punctuation with the first half
+    if (inLink(m.index)) continue;
+    if (best === -1 || Math.abs(cut - mid) < Math.abs(best - mid)) best = cut;
+  }
+  if (best === -1) return [body, ""];
+  return [body.slice(0, best).trim(), body.slice(best).trim()];
 }
 
 const LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g;

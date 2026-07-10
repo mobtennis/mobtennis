@@ -52,6 +52,14 @@ class EditorialDigest(SQLModel, table=True):
     # re-querying the DB.
     source_json: str
 
+    # JSON-serialised list of inline article images: each entry is
+    # {url, credit, credit_url, caption, anchor}. `anchor` is "lead" or
+    # "mid" — the frontend interleaves them into the prose. Sourced from
+    # news-wire share images (og:image, credited + linked back to the
+    # publisher) with player/tournament Commons photos as fallback. Null
+    # for pre-feature and image-less digests.
+    images_json: str | None = None
+
     # JSON-serialised list of Google Ads campaign briefs produced
     # alongside the digest. Each entry has a theme, keyword list, ad
     # headlines, descriptions, and a landing URL on mob.tennis.

@@ -17,6 +17,7 @@ from html.parser import HTMLParser
 from time import mktime
 
 import feedparser
+import httpx
 from sqlmodel import Session, select
 
 from app.models.news import NewsItem
@@ -65,6 +66,9 @@ def sync_news(session: Session) -> list[NewsItem]:
     tournament_slugs = list(session.exec(select(Tournament.slug).limit(500)).all())
 
     added: list[NewsItem] = []
+    # Cap live og:image fetches per run so a feed that dumps many new
+    # items at once can't stall the 15-min job on network round-trips.
+    og_budget = 12
     # Per-feed visibility — log a one-line summary even when we add
     # nothing. That way a feed that silently dies (404 / empty XML)
     # shows up in the journal as "entries=0" and we notice without
@@ -88,12 +92,16 @@ def sync_news(session: Session) -> list[NewsItem]:
             published = _parse_published(entry) or datetime.utcnow()
             haystack = f"{entry.get('title', '')} {entry.get('summary', '')}"
             ps, ts = _tag(haystack, player_slugs, tournament_slugs)
+            image = _extract_image(entry)
+            if not image and og_budget > 0:
+                image = fetch_og_image(link)
+                og_budget -= 1
             item = NewsItem(
                 source=source,
                 source_url=link,
                 title=entry.get("title", ""),
                 summary=entry.get("summary"),
-                image_url=_extract_image(entry),
+                image_url=image,
                 author=entry.get("author"),
                 published_at=published,
                 player_slugs=ps or None,
@@ -117,12 +125,63 @@ def sync_news(session: Session) -> list[NewsItem]:
 
 
 def _extract_image(entry: dict) -> str | None:
+    """Image straight from the feed entry — media_content / media_thumbnail
+    / an image-typed <link>. Cheap (no network). Returns None when the feed
+    carries no image, in which case callers can fall back to og:image via
+    `fetch_og_image(link)`."""
     media = entry.get("media_content") or entry.get("media_thumbnail")
     if media and isinstance(media, list) and media[0].get("url"):
         return media[0]["url"]
     for link in entry.get("links", []):
         if link.get("type", "").startswith("image"):
             return link.get("href")
+    # Some feeds embed the lead image only in the summary HTML.
+    _, summary_img = clean_summary(entry.get("summary"))
+    return summary_img
+
+
+# og:image / twitter:image meta tags, in either attribute order.
+_OG_IMAGE_RE = (
+    re.compile(
+        r'<meta[^>]+(?:property|name)=["\'](?:og:image(?::url)?|twitter:image)["\']'
+        r'[^>]+content=["\']([^"\']+)["\']',
+        re.I,
+    ),
+    re.compile(
+        r'<meta[^>]+content=["\']([^"\']+)["\']'
+        r'[^>]+(?:property|name)=["\'](?:og:image(?::url)?|twitter:image)["\']',
+        re.I,
+    ),
+)
+
+
+def fetch_og_image(url: str, *, timeout: float = 6.0) -> str | None:
+    """Fetch a news article's og:image — the image the publisher itself
+    designates for social/RSS previews. Displayed with a visible source
+    credit and a link back to the article, this is the standard,
+    publisher-intended syndication use (what every RSS reader / unfurler
+    does). Returns None on any failure so callers degrade gracefully."""
+    if not url or not url.startswith("http"):
+        return None
+    try:
+        r = httpx.get(
+            url,
+            timeout=timeout,
+            follow_redirects=True,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; MobTennisBot/1.0; +https://mob.tennis)"
+            },
+        )
+        r.raise_for_status()
+        head = r.text[:200_000]  # og tags live in <head>; cap the parse
+    except Exception:
+        return None
+    for rx in _OG_IMAGE_RE:
+        m = rx.search(head)
+        if m:
+            img = unescape(m.group(1)).strip()
+            if img.startswith("http"):
+                return img
     return None
 
 

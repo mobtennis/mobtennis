@@ -97,7 +97,7 @@ export default async function DigestWeekPage({
             prompt and validated by the backend sanitizer. No other
             markdown is supported — the body is one flowing
             paragraph. */}
-        <DigestBody body={digest.body_md} />
+        <DigestBody body={digest.body_md} images={digest.images} />
       </article>
 
       <nav className="flex items-center justify-between gap-3">

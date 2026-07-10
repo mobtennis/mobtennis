@@ -23,10 +23,23 @@ class NewsSource(BaseModel):
     source: str  # publisher name, e.g. "Reuters", "tennis.com"
 
 
+class DigestImage(BaseModel):
+    """An inline article image. Sourced from a news-wire share photo
+    (credited + linked back to the publisher) or a licensed player
+    Commons photo. `anchor` places it: "lead" above the prose, "mid"
+    interleaved into it."""
+    url: str
+    credit: str | None = None
+    credit_url: str | None = None
+    caption: str | None = None
+    anchor: str = "lead"
+
+
 class DigestDetail(DigestSummary):
     body_md: str
     model_name: str
     news_sources: list[NewsSource] = []
+    images: list[DigestImage] = []
     # Coverage window the digest actually summarised. Nullable for
     # backfilled legacy rows that pre-date the period tracking —
     # those covered the ISO week starting at `week_start`.

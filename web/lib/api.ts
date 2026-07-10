@@ -508,10 +508,20 @@ export type CallTheShotArchiveItem = {
   item_count: number;
 };
 
+export type DigestImage = {
+  url: string;
+  credit: string | null;
+  credit_url: string | null;
+  caption: string | null;
+  /** "lead" renders above the prose; "mid" interleaves into it. */
+  anchor: "lead" | "mid" | string;
+};
+
 export type DigestDetail = DigestSummary & {
   body_md: string;
   model_name: string;
   news_sources: NewsSource[];
+  images: DigestImage[];
   /** Coverage window the digest summarises. Nullable on legacy
    *  backfilled rows that predate period tracking. */
   period_start: string | null;
