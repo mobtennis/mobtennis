@@ -393,6 +393,22 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
 
     rows: list[Tournament] = session.exec(select(Tournament)).all()
 
+    # Brand → logo fallback. A tournament's logo is edition-invariant, but
+    # enrichment is per-edition and patchy — e.g. in mid-2026 the US Open
+    # card resolves to its 2025 edition, whose image_url the enricher never
+    # filled, so it rendered a bare flag while every other Slam showed a
+    # logo. Borrow any edition's image (most recent wins, in case of a
+    # rebrand) so the surfaced edition need not be the enriched one.
+    brand_image: dict[tuple[str, Tour], str] = {}
+    brand_image_year: dict[tuple[str, Tour], int] = {}
+    for t in rows:
+        if not t.image_url:
+            continue
+        key = (t.slug, t.tour)
+        if key not in brand_image_year or t.year > brand_image_year[key]:
+            brand_image[key] = t.image_url
+            brand_image_year[key] = t.year
+
     # Dedupe (slug, tour) → prefer the in-progress row, then any row with
     # matches, then most recent year. Without the in-progress preference,
     # a placeholder Wimbledon 2026 (no matches) would beat Wimbledon 2025
@@ -416,7 +432,7 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
             slug=t.slug, year=t.year, name=t.name, tour=t.tour, category=t.category,
             surface=t.surface, city=t.city, country_code=t.country_code,
             start_date=t.start_date, end_date=t.end_date,
-            image_url=t.image_url,
+            image_url=t.image_url or brand_image.get((t.slug, t.tour)),
             live_count=live_counts.get(t.id, 0),
             today_count=today_counts.get(t.id, 0),
             is_in_progress=t.id in in_progress_ids,
