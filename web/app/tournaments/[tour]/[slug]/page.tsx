@@ -342,18 +342,22 @@ function TournamentHero({
   isFuture: boolean;
 }) {
   return (
-    <header className="relative overflow-hidden rounded-lg border border-ink-700 bg-ink-900 shadow-card">
+    <header className="overflow-hidden rounded-lg border border-ink-700 bg-ink-900 shadow-card">
       {tournament.image_url && (
-        <>
+        // These images are brand logos (Wikipedia infobox marks), not
+        // photos — so contain them on a soft panel rather than
+        // cover-cropping into a banner (which sliced the US Open logo in
+        // half). Whole mark, centered, never cropped.
+        <div className="flex items-center justify-center border-b border-ink-700 bg-ink-800/40 px-6 py-8">
           <div
-            className="h-44 bg-cover bg-center"
+            className="h-24 w-full max-w-md bg-contain bg-center bg-no-repeat"
             style={{ backgroundImage: `url(${tournament.image_url})` }}
-            aria-hidden
+            role="img"
+            aria-label={`${tournament.name} logo`}
           />
-          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-ink-900 via-ink-900/70 to-transparent" />
-        </>
+        </div>
       )}
-      <div className={tournament.image_url ? "relative -mt-10 p-4" : "p-4"}>
+      <div className="p-4">
         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${tournamentColor(tournament.category)}`}>
           {tournament.category.replace(/_/g, " ")}
         </span>
