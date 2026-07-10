@@ -14,6 +14,10 @@ import { EVENTS } from "@/lib/analytics";
 // stays cheap; the per-fetch revalidate=0 below pairs with it.
 export const revalidate = 0;
 
+// How many past recaps to show inline on an article before deferring to
+// the paginated /digest/archive page.
+const ARCHIVE_PREVIEW = 8;
+
 export async function generateMetadata({
   params,
 }: {
@@ -128,8 +132,11 @@ export default async function DigestWeekPage({
       {archive.length > 2 && (
         <section>
           <SectionHeader title="Archive" subtitle="Past weekly recaps" />
+          {/* Only the most recent handful inline — the full list grows
+              every week and buried the article. The rest live on the
+              paginated archive page. */}
           <ul className="mt-2 divide-y divide-ink-700 overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
-            {archive.map((d) => (
+            {archive.slice(0, ARCHIVE_PREVIEW).map((d) => (
               <li key={d.week_start}>
                 <Link
                   href={`/digest/${d.week_start}`}
@@ -147,6 +154,14 @@ export default async function DigestWeekPage({
               </li>
             ))}
           </ul>
+          {archive.length > ARCHIVE_PREVIEW && (
+            <Link
+              href="/digest/archive"
+              className="mt-3 inline-block text-xs font-semibold text-accent hover:text-accent-dim"
+            >
+              View all recaps →
+            </Link>
+          )}
         </section>
       )}
     </div>

@@ -14,12 +14,18 @@ router = APIRouter(prefix="/api/digests", tags=["digests"])
 @router.get("", response_model=list[DigestSummary])
 def list_digests(
     limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
 ):
-    """Archive list, newest first. Body is omitted to keep payloads small."""
+    """Archive list, newest first. Body is omitted to keep payloads small.
+
+    `offset` paginates the archive page. Clients detect "has next page" by
+    whether a full `limit` rows came back, so no separate count query.
+    """
     rows = session.exec(
         select(EditorialDigest)
         .order_by(EditorialDigest.week_start.desc())
+        .offset(offset)
         .limit(limit)
     ).all()
     return [
