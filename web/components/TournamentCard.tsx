@@ -97,7 +97,11 @@ function Thumb({ imageUrl, fallback }: { imageUrl: string | null; fallback: stri
       <img
         src={imageUrl}
         alt=""
-        className="h-10 w-10 shrink-0 rounded-md border border-ink-700 bg-ink-800 object-cover"
+        // contain, not cover: square crests (Wimbledon, AO, RG) fill the
+        // box either way, but a wide horizontal logo (US Open) gets
+        // cover-cropped to an unreadable slice ("ope"). Contain shows the
+        // whole mark; the padding keeps it off the rounded corners.
+        className="h-10 w-10 shrink-0 rounded-md border border-ink-700 bg-ink-800 object-contain p-0.5"
         loading="lazy"
       />
     );
