@@ -257,6 +257,12 @@ export type H2HMeeting = {
   score: string | null;
 };
 
+export type RivalryPair = {
+  slug1: string;
+  slug2: string;
+  meetings: number;
+};
+
 export type H2HSummary = {
   total_meetings: number;
   finals_meetings: number;

@@ -25,11 +25,20 @@ const GOOGLE_ADS_ID =
   process.env.NEXT_PUBLIC_GOOGLE_ADS_ID ?? "AW-18177033731";
 
 export const metadata: Metadata = {
+  // Anchors relative canonical + OG image URLs (per-page metadata below
+  // uses relative paths like "/api/og/h2h?..." and "/h2h/...").
+  metadataBase: new URL("https://mob.tennis"),
   title: { default: "Mob Tennis — Every match. Every story.", template: "%s · Mob Tennis" },
   description:
     "Live ATP & WTA scores, player profiles, tournament draws, head-to-head, news. Fan-first, fast, clean.",
   applicationName: "Mob Tennis",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Mob Tennis" },
+  openGraph: {
+    siteName: "Mob Tennis",
+    type: "website",
+    locale: "en_US",
+  },
+  twitter: { card: "summary_large_image", site: "@mobtennis" },
   // AdSense site verification — static claim of ownership for Google's
   // crawlers, independent of whether the loader script is currently
   // mounted on the page.

@@ -5,6 +5,7 @@ import { api, type MatchDetail, type VideoItemSummary } from "@/lib/api";
 import { AdSlot } from "@/components/AdSlot";
 // LiveMatchListener removed — MatchDetailLiveHeader owns its own SSE
 // subscription via the shared live-stream hook.
+import { JsonLd } from "@/components/JsonLd";
 import { MatchStatsPanel } from "@/components/MatchStatsPanel";
 import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 import { TrackOnMount } from "@/components/TrackOnMount";
@@ -26,10 +27,36 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const event = match.tournament_name
     ? `${match.tournament_name}${match.tournament_year ? ` ${match.tournament_year}` : ""}`
     : null;
-  if (p1 && p2) {
-    return { title: event ? `${p1} vs ${p2} — ${event}` : `${p1} vs ${p2}` };
+  if (!p1 || !p2) {
+    return { title: event ?? `Match ${id}` };
   }
-  return { title: event ?? `Match ${id}` };
+
+  const title = event ? `${p1} vs ${p2} — ${event}` : `${p1} vs ${p2}`;
+  // Drop api-tennis's verbose "ATP Wimbledon - " prefix from the round.
+  const round = match.round?.includes(" - ")
+    ? match.round.split(" - ").pop()
+    : match.round;
+  const isLive = match.status === "live" || match.status === "suspended";
+  const description = isLive
+    ? `${p1} vs ${p2} live${event ? ` at ${event}` : ""}${match.score ? ` — ${match.score}` : ""}. Live score, stats and highlights.`
+    : `${p1} vs ${p2}${event ? ` at ${event}` : ""}${match.score ? ` — ${match.score}` : ""}. Result, stats and highlights.`;
+  const og =
+    `/api/og/match?p1=${encodeURIComponent(p1)}&p2=${encodeURIComponent(p2)}` +
+    (match.score ? `&score=${encodeURIComponent(match.score)}` : "") +
+    `&status=${encodeURIComponent(match.status)}` +
+    (event ? `&event=${encodeURIComponent(event)}` : "") +
+    (round ? `&round=${encodeURIComponent(round)}` : "");
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      url: `/matches/${id}`,
+      images: [{ url: og, width: 1200, height: 630 }],
+    },
+    twitter: { title, description, images: [og] },
+  };
 }
 
 export default async function MatchPage({ params }: { params: Promise<{ id: string }> }) {
@@ -49,8 +76,38 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
     { revalidate: 120 },
   ).catch(() => [] as VideoItemSummary[]);
 
+  const competitors = [match.player1, match.player2]
+    .filter((p): p is NonNullable<typeof p> => Boolean(p))
+    .map((p) => ({
+      "@type": "Person",
+      name: p.full_name,
+      url: `https://mob.tennis/players/${p.slug}`,
+    }));
+
   return (
     <div className="space-y-4">
+      {match.player1 && match.player2 && (
+        <JsonLd
+          data={{
+            "@context": "https://schema.org",
+            "@type": "SportsEvent",
+            name: `${match.player1.full_name} vs ${match.player2.full_name}`,
+            sport: "Tennis",
+            url: `https://mob.tennis/matches/${match.id}`,
+            ...(match.scheduled_at ? { startDate: match.scheduled_at } : {}),
+            ...(match.tournament_name
+              ? {
+                  superEvent: {
+                    "@type": "SportsEvent",
+                    name: `${match.tournament_name}${match.tournament_year ? ` ${match.tournament_year}` : ""}`,
+                    url: `https://mob.tennis/tournaments/${match.tournament_tour ?? "atp"}/${match.tournament_slug}`,
+                  },
+                }
+              : {}),
+            competitor: competitors,
+          }}
+        />
+      )}
       <TrackOnMount
         event={EVENTS.matchOpened}
         properties={{

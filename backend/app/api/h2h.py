@@ -3,14 +3,85 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
+from fastapi import Query
+from sqlalchemy import text
+
 from app.api._helpers import match_to_summary, player_summary
 from app.db.session import get_session
 from app.models.match import Match, MatchStatus
 from app.models.player import Player
 from app.models.tournament import Tournament
-from app.schemas.h2h import H2HMeeting, H2HResponse, H2HSummary, H2HSurfaceSplit
+from app.schemas.h2h import (
+    H2HMeeting,
+    H2HResponse,
+    H2HSummary,
+    H2HSurfaceSplit,
+    RivalryPair,
+)
 
 router = APIRouter(prefix="/api/h2h", tags=["h2h"])
+
+
+# NOTE: this must be declared BEFORE the `/{matchup}` catch-all below,
+# otherwise "rivalries" is captured as a matchup slug.
+@router.get("/rivalries", response_model=list[RivalryPair])
+def rivalries(
+    min_meetings: int = Query(2, ge=1, le=50),
+    limit: int = Query(5000, ge=1, le=20000),
+    session: Session = Depends(get_session),
+):
+    """Enumerate singles head-to-head pairings that actually have match
+    history, most-contested first. Feeds the sitemap: "X vs Y h2h" is one
+    of the highest-intent tennis search patterns and there's a page for
+    every pair, but listing all N² combinations is a crawl-budget sink.
+    We restrict to pairs that (a) met `min_meetings`+ times and (b) are
+    both recognisable tour players (a current or career-high ranking on
+    record) — that's the marquee-rivalry long tail without the junk.
+
+    Pairs are keyed order-insensitively (MIN/MAX of the two player ids)
+    and returned with slugs alphabetically ordered for one canonical URL.
+    """
+    rows = session.exec(
+        text(
+            """
+            SELECT MIN(m.player1_id, m.player2_id) AS a,
+                   MAX(m.player1_id, m.player2_id) AS b,
+                   COUNT(*) AS meetings
+            FROM matches m
+            WHERE m.is_doubles = 0
+              AND m.status = 'FINISHED'
+              AND m.player1_id IS NOT NULL
+              AND m.player2_id IS NOT NULL
+              AND m.player1_id <> m.player2_id
+            GROUP BY a, b
+            HAVING meetings >= :min_meetings
+            ORDER BY meetings DESC
+            LIMIT :cap
+            """
+        ).bindparams(min_meetings=min_meetings, cap=limit)
+    ).all()
+
+    # Batch-load every player referenced so we can filter to ranked
+    # players and map ids → slugs without a query per pair.
+    ids = {pid for r in rows for pid in (r.a, r.b)}
+    players = {
+        p.id: p
+        for p in session.exec(select(Player).where(Player.id.in_(ids))).all()
+    }
+
+    def notable(p: Player | None) -> bool:
+        return p is not None and (
+            p.current_rank is not None or p.career_high_rank is not None
+        )
+
+    out: list[RivalryPair] = []
+    for r in rows:
+        pa, pb = players.get(r.a), players.get(r.b)
+        if not notable(pa) or not notable(pb):
+            continue
+        slug1, slug2 = sorted((pa.slug, pb.slug))
+        out.append(RivalryPair(slug1=slug1, slug2=slug2, meetings=r.meetings))
+    return out
 
 
 @router.get("/{matchup}", response_model=H2HResponse)

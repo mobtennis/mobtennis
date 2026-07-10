@@ -4,6 +4,7 @@ import {
   api,
   type DigestSummary,
   type PlayerSummary,
+  type RivalryPair,
   type TournamentSummary,
 } from "@/lib/api";
 
@@ -19,12 +20,18 @@ export const revalidate = 3600;
  * snapshot has substance), the tournament brand pages, and every
  * weekly digest in the archive.
  *
+ * H2H pages: we DON'T list every N² pair (a crawl-budget sink), but the
+ * marquee long tail — pairs that actually met 2+ times, both recognisable
+ * players — is one of the highest-intent tennis search patterns
+ * ("X vs Y h2h"), so we enumerate those via /api/h2h/rivalries. Players
+ * appearing in a rivalry are also added to the player-page set, which is
+ * how retired greats (Federer, Djokovic, …) get in — the ranked-players
+ * list is ordered by *current* rank, so they'd otherwise never appear.
+ *
  * Intentionally excluded:
  *   - Individual match pages — high volume, low standalone editorial
  *     value; linked from tournament + player + H2H pages, which are
  *     where a reader actually lands.
- *   - H2H pages — crawled organically from player pages; including
- *     every pair is a combinatorial explosion.
  *   - Per-year tournament editions — the brand page already aggregates
  *     enough history; year pages are reachable via that.
  */
@@ -49,7 +56,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // ---- Dynamic pages — best-effort, sitemap shouldn't break the build ----
 
-  const [digests, atpPlayers, wtaPlayers, tournaments] = await Promise.all([
+  const [digests, atpPlayers, wtaPlayers, tournaments, pairs] = await Promise.all([
     api<DigestSummary[]>("/api/digests?limit=100", { revalidate: 3600 }).catch(
       () => [] as DigestSummary[],
     ),
@@ -62,6 +69,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     api<TournamentSummary[]>("/api/tournaments?limit=200", {
       revalidate: 3600,
     }).catch(() => [] as TournamentSummary[]),
+    api<RivalryPair[]>("/api/h2h/rivalries?min_meetings=2", {
+      revalidate: 3600,
+    }).catch(() => [] as RivalryPair[]),
   ]);
 
   const digestPages: MetadataRoute.Sitemap = digests.map((d) => ({
@@ -71,14 +81,30 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }));
 
-  const playerPages: MetadataRoute.Sitemap = [...atpPlayers, ...wtaPlayers].map(
-    (p) => ({
-      url: `${BASE}/players/${p.slug}`,
-      lastModified: now,
-      changeFrequency: "weekly",
-      priority: 0.7,
-    }),
-  );
+  // H2H pages — marquee rivalries only (see docstring). Slugs come back
+  // alphabetically ordered so each pair is one canonical URL.
+  const h2hPages: MetadataRoute.Sitemap = pairs.map((p) => ({
+    url: `${BASE}/h2h/${p.slug1}-vs-${p.slug2}`,
+    lastModified: now,
+    changeFrequency: "monthly",
+    priority: 0.6,
+  }));
+
+  // Player pages: the ranked list (top 200/tour, ordered by current rank)
+  // UNION every player who appears in a rivalry — that's how retired
+  // greats, who have no current rank, get indexed. De-dupe on slug.
+  const playerSlugs = new Set<string>();
+  for (const p of [...atpPlayers, ...wtaPlayers]) playerSlugs.add(p.slug);
+  for (const r of pairs) {
+    playerSlugs.add(r.slug1);
+    playerSlugs.add(r.slug2);
+  }
+  const playerPages: MetadataRoute.Sitemap = [...playerSlugs].map((slug) => ({
+    url: `${BASE}/players/${slug}`,
+    lastModified: now,
+    changeFrequency: "weekly",
+    priority: 0.7,
+  }));
 
   // De-duplicate by (tour, slug) — the API returns one row per edition, but
   // the page route is the brand page that aggregates them.
@@ -96,5 +122,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }),
   );
 
-  return [...staticPages, ...digestPages, ...tournamentPages, ...playerPages];
+  return [
+    ...staticPages,
+    ...digestPages,
+    ...tournamentPages,
+    ...playerPages,
+    ...h2hPages,
+  ];
 }

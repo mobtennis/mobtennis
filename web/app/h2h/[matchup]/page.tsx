@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { api, type H2HResponse, type PlayerDetail } from "@/lib/api";
 import { ChangeOpponentLink } from "@/components/ChangeOpponentLink";
 import { H2HOverview } from "@/components/H2HOverview";
+import { JsonLd } from "@/components/JsonLd";
 import { OpponentPicker } from "@/components/OpponentPicker";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { PlayerHoverCard } from "@/components/PlayerHoverCard";
@@ -26,10 +27,35 @@ export async function generateMetadata({ params }: { params: Promise<{ matchup: 
     () => null,
   );
   const totalMeetings = data?.summary?.total_meetings ?? data?.matches.length ?? 0;
-  if (totalMeetings === 0) {
+  if (!data || totalMeetings === 0) {
     return { title, robots: { index: false, follow: true } };
   }
-  return { title };
+
+  const n1 = data.player1.full_name;
+  const n2 = data.player2.full_name;
+  const richTitle = `${n1} vs ${n2} — Head-to-Head`;
+  const description =
+    `${n1} vs ${n2}: ${data.p1_wins}–${data.p2_wins} all-time across ` +
+    `${totalMeetings} meeting${totalMeetings === 1 ? "" : "s"}. Full head-to-head ` +
+    `record, surface breakdown and every past match.`;
+  // Canonical = alphabetical slug order, so "a-vs-b" and "b-vs-a"
+  // (both linked from player pages) consolidate onto one URL.
+  const canonical = `/h2h/${[s1, s2].sort().join("-vs-")}`;
+  const og =
+    `/api/og/h2h?p1=${encodeURIComponent(n1)}&p2=${encodeURIComponent(n2)}` +
+    `&w1=${data.p1_wins}&w2=${data.p2_wins}`;
+  return {
+    title: richTitle,
+    description,
+    alternates: { canonical },
+    openGraph: {
+      title: richTitle,
+      description,
+      url: canonical,
+      images: [{ url: og, width: 1200, height: 630 }],
+    },
+    twitter: { title: richTitle, description, images: [og] },
+  };
 }
 
 export default async function H2HPage({ params }: { params: Promise<{ matchup: string }> }) {
@@ -64,6 +90,19 @@ export default async function H2HPage({ params }: { params: Promise<{ matchup: s
 
   return (
     <div className="space-y-6">
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          name: `${data.player1.full_name} vs ${data.player2.full_name} — Head-to-Head`,
+          about: [data.player1, data.player2].map((p) => ({
+            "@type": "Person",
+            name: p.full_name,
+            url: `https://mob.tennis/players/${p.slug}`,
+            ...(p.country_code ? { nationality: p.country_code } : {}),
+          })),
+        }}
+      />
       <header className="rounded-lg border border-ink-700 bg-ink-900 p-4 shadow-card">
         <h1 className="text-center text-base font-semibold uppercase tracking-wider text-text-muted">Head-to-Head</h1>
         <div className="mt-3 grid grid-cols-3 items-start gap-3">

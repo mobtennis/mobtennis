@@ -10,6 +10,16 @@ class H2HSurfaceSplit(BaseModel):
     p2_wins: int
 
 
+class RivalryPair(BaseModel):
+    """One head-to-head pairing that actually has match history. Used to
+    enumerate high-value H2H pages for the sitemap without walking every
+    N² player combination. Slugs are alphabetically ordered so the pair
+    has one canonical URL."""
+    slug1: str
+    slug2: str
+    meetings: int
+
+
 class H2HMeeting(BaseModel):
     """Compact pointer to one specific match. Used by the H2H summary
     block for 'first meeting' / 'last meeting' callouts so the page

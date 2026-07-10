@@ -17,6 +17,7 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { ExternalLinks } from "@/components/ExternalLinks";
 import { FeedList } from "@/components/FeedList";
 import { GetTheAppCard } from "@/components/GetTheAppCard";
+import { JsonLd } from "@/components/JsonLd";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { PlayerPhotoStrip } from "@/components/PlayerPhotoStrip";
 import { PlayerSnapshot as PlayerSnapshotProse } from "@/components/PlayerSnapshot";
@@ -47,8 +48,29 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const rankSuffix = player.current_rank
     ? ` — ${(player.tour ?? "").toUpperCase()} #${player.current_rank}`.replace(/  +/g, " ")
     : "";
+  const title = `${player.full_name}${rankSuffix}`;
+  const bioSnippet = player.bio
+    ? player.bio.replace(/\s+/g, " ").trim().slice(0, 155)
+    : null;
+  const description =
+    bioSnippet ??
+    `${player.full_name}${rankSuffix}. Profile, recent form, ranking history, ` +
+      `titles and head-to-head records.`;
+  const og =
+    `/api/og/player?name=${encodeURIComponent(player.full_name)}` +
+    (player.current_rank ? `&rank=${player.current_rank}` : "") +
+    (player.tour ? `&tour=${player.tour}` : "") +
+    (player.country_code ? `&country=${encodeURIComponent(player.country_code)}` : "");
   return {
-    title: `${player.full_name}${rankSuffix}`,
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      url: `/players/${slug}`,
+      images: [{ url: og, width: 1200, height: 630 }],
+    },
+    twitter: { title, description, images: [og] },
     ...(isThin ? { robots: { index: false, follow: true } } : {}),
   };
 }
@@ -85,8 +107,30 @@ export default async function PlayerPage({ params }: { params: Promise<{ slug: s
   const upcoming = matches.filter((m) => m.status === "scheduled");
   const recent = matches.filter((m) => m.status === "finished").slice(0, 10);
 
+  const sameAs = [
+    player.wikipedia_url,
+    player.twitter_handle ? `https://x.com/${player.twitter_handle}` : null,
+    player.instagram_handle
+      ? `https://instagram.com/${player.instagram_handle}`
+      : null,
+  ].filter(Boolean);
+
   return (
     <div className="space-y-6">
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "Person",
+          name: player.full_name,
+          url: `https://mob.tennis/players/${player.slug}`,
+          jobTitle: "Professional tennis player",
+          ...(player.country_code ? { nationality: player.country_code } : {}),
+          ...(player.birth_date ? { birthDate: player.birth_date } : {}),
+          ...(player.height_cm ? { height: `${player.height_cm} cm` } : {}),
+          ...(player.image_url ? { image: player.image_url } : {}),
+          ...(sameAs.length ? { sameAs } : {}),
+        }}
+      />
       <AutoRefresh enabled={live.some((m) => m.status === "live" || m.status === "suspended")} intervalMs={15_000} />
       <TrackOnMount
         event={EVENTS.playerOpened}
