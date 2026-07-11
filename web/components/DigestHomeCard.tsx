@@ -38,11 +38,16 @@ export async function DigestHomeCard() {
     <section className="overflow-hidden rounded-lg border border-ink-700 bg-ink-900 shadow-card">
       {heroImage && (
         <Link href="/digest" className="relative block hover:opacity-95">
+          {/* aspect-[5/2] instead of a fixed short height: a ~5:1 banner
+              took a thin centre slice of a 16:9 news photo and lopped off
+              the subject's head. A 5:2 frame shows much more of the
+              publisher's composed shot, and object-top biases the crop
+              upward so faces/heads survive rather than a headless torso. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={heroImage.url}
             alt={heroImage.caption ?? ""}
-            className="h-40 w-full object-cover"
+            className="aspect-[5/2] w-full object-cover object-top"
             loading="lazy"
           />
           {heroImage.credit && (

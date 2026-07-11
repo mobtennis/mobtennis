@@ -63,7 +63,7 @@ function Figure({ image }: { image: DigestImage }) {
       <img
         src={image.url}
         alt={image.caption ?? ""}
-        className="max-h-[420px] w-full object-cover"
+        className="max-h-[420px] w-full object-cover object-top"
         loading="lazy"
       />
       {hasCaption && (
