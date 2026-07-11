@@ -1160,39 +1160,57 @@ def select_digest_images(session: Session, facts: dict) -> list[dict]:
     Live-resolves a story's og:image when ingest didn't capture one and
     writes it back to the NewsItem so cards + future digests reuse it.
     """
-    from app.services.news import fetch_og_image
+    from app.services.news import (
+        fetch_og_image,
+        measure_image,
+        resolution_ok,
+        upsize_commons,
+    )
 
     images: list[dict] = []
     used: set[str] = set()
 
     # --- 1) News-wire images (primary) ---------------------------------
     # Stories tied to a player/tournament the digest is about lead; the
-    # list is already newest-first within that.
+    # list is already newest-first within that. Cap how many stories we
+    # inspect so a run can't fan out to dozens of image downloads.
     news = sorted(
         facts.get("news") or [],
         key=lambda n: 0 if (n.get("player_slugs") or n.get("tournament_slugs")) else 1,
     )
-    og_budget = 4  # bound live fetches during a single generation
-    for n in news:
+    og_budget = 6  # bound live og:image fetches during a single generation
+    for n in news[:12]:
         if len(images) >= 2:
             break
         url = (n.get("url") or "").strip()
-        img = (n.get("image_url") or "").strip() or None
-        if not img and og_budget > 0:
-            img = fetch_og_image(url)
+        stored = (n.get("image_url") or "").strip() or None
+
+        # Prefer a resolution-checked image. Try the stored one first; if
+        # it's missing or too small (grainy feed thumbnail), fetch the
+        # article's og:image, which publishers serve at full share size.
+        chosen: str | None = None
+        if stored and stored not in used and resolution_ok(measure_image(stored)):
+            chosen = stored
+        elif og_budget > 0:
+            og = fetch_og_image(url)
             og_budget -= 1
-            if img and url:
-                row = session.exec(
-                    select(NewsItem).where(NewsItem.source_url == url)
-                ).first()
-                if row and not row.image_url:
-                    row.image_url = img
-                    session.add(row)
-        if not img or img in used:
+            if og and og not in used and resolution_ok(measure_image(og)):
+                chosen = og
+                # Cache the good image back on the NewsItem so cards +
+                # future digests reuse it instead of the small thumbnail.
+                if url:
+                    row = session.exec(
+                        select(NewsItem).where(NewsItem.source_url == url)
+                    ).first()
+                    if row and row.image_url != og:
+                        row.image_url = og
+                        session.add(row)
+
+        if not chosen:
             continue
-        used.add(img)
+        used.add(chosen)
         images.append({
-            "url": img,
+            "url": chosen,
             "credit": _source_label(n.get("source")),
             "credit_url": url or None,
             "caption": ((n.get("title") or "").strip()[:140]) or None,
@@ -1210,11 +1228,18 @@ def select_digest_images(session: Session, facts: dict) -> list[dict]:
             if len(images) >= 2:
                 break
             p = session.exec(select(Player).where(Player.slug == slug)).first()
-            if not p or not p.image_url or p.image_url in used:
+            if not p or not p.image_url:
                 continue
-            used.add(p.image_url)
+            # Prefer a crisp upsized Commons variant; skip if we can't get
+            # a large-enough version (better no image than a grainy one).
+            cand = upsize_commons(p.image_url)
+            if not cand or cand in used or not resolution_ok(measure_image(cand)):
+                cand = p.image_url
+                if cand in used or not resolution_ok(measure_image(cand)):
+                    continue
+            used.add(cand)
             images.append({
-                "url": p.image_url,
+                "url": cand,
                 "credit": p.image_credit or "Wikimedia Commons",
                 "credit_url": p.image_license_url or p.wikipedia_url,
                 "caption": p.full_name,

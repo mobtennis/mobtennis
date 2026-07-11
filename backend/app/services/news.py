@@ -14,10 +14,12 @@ import re
 from datetime import datetime
 from html import unescape
 from html.parser import HTMLParser
+from io import BytesIO
 from time import mktime
 
 import feedparser
 import httpx
+from PIL import Image
 from sqlmodel import Session, select
 
 from app.models.news import NewsItem
@@ -183,6 +185,53 @@ def fetch_og_image(url: str, *, timeout: float = 6.0) -> str | None:
             if img.startswith("http"):
                 return img
     return None
+
+
+# A featured image renders at roughly article width (~700-1200px), so a
+# small feed thumbnail (e.g. the Guardian's 140px RSS variant) looks
+# grainy when upscaled. Require a real, non-tiny source image: short edge
+# ≥ 400 AND long edge ≥ 700. Orientation-agnostic so portraits pass too.
+_MIN_IMAGE_SHORT_EDGE = 400
+_MIN_IMAGE_LONG_EDGE = 700
+
+
+def resolution_ok(size: tuple[int, int] | None) -> bool:
+    if not size:
+        return False
+    w, h = size
+    return min(w, h) >= _MIN_IMAGE_SHORT_EDGE and max(w, h) >= _MIN_IMAGE_LONG_EDGE
+
+
+def measure_image(url: str, *, timeout: float = 6.0) -> tuple[int, int] | None:
+    """(width, height) of the image at `url`, or None on any failure.
+    Used to reject low-resolution / grainy images before we feature one."""
+    if not url or not url.startswith("http"):
+        return None
+    try:
+        r = httpx.get(
+            url,
+            timeout=timeout,
+            follow_redirects=True,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; MobTennisBot/1.0; +https://mob.tennis)"
+            },
+        )
+        r.raise_for_status()
+        with Image.open(BytesIO(r.content)) as im:
+            return im.size
+    except Exception:
+        return None
+
+
+# Wikimedia thumb URLs carry the width as ".../<N>px-<File>". Bump it so a
+# small player thumb becomes a crisp source before we feature it.
+_COMMONS_THUMB_RE = re.compile(r"/(\d+)px-")
+
+
+def upsize_commons(url: str | None, target: int = 1024) -> str | None:
+    if not url:
+        return url
+    return _COMMONS_THUMB_RE.sub(f"/{target}px-", url, count=1)
 
 
 # RSS feeds ship `summary` as HTML — paragraphs, anchor tags, sometimes embedded
