@@ -25,8 +25,34 @@ export async function DigestHomeCard() {
     .split(/(?<=\.)\s+/, 2)
     .join(" ");
 
+  // Hero image on the home card — but ONLY for single-day recaps (the
+  // daily-during-a-Slam runs). Weekly / multi-day digests would leave
+  // the same photo parked on the front page for up to 7 days, which
+  // gets stale; those stay text-only. Matches the <=30h "Tennis recap"
+  // bucket used by coverageEyebrow below.
+  const heroImage = isDailyRecap(digest)
+    ? digest.images?.find((i) => i.anchor === "lead") ?? null
+    : null;
+
   return (
-    <section className="rounded-lg border border-ink-700 bg-ink-900 p-4 shadow-card">
+    <section className="overflow-hidden rounded-lg border border-ink-700 bg-ink-900 shadow-card">
+      {heroImage && (
+        <Link href="/digest" className="relative block hover:opacity-95">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={heroImage.url}
+            alt={heroImage.caption ?? ""}
+            className="h-40 w-full object-cover"
+            loading="lazy"
+          />
+          {heroImage.credit && (
+            <span className="absolute bottom-1 right-1.5 rounded bg-black/45 px-1.5 py-0.5 text-[9px] font-medium text-white/90">
+              {heroImage.credit}
+            </span>
+          )}
+        </Link>
+      )}
+      <div className="p-4">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-[10px] font-bold uppercase tracking-wider text-accent">
           {coverageEyebrow(digest)}
@@ -46,6 +72,7 @@ export async function DigestHomeCard() {
           Read the full recap →
         </span>
       </Link>
+      </div>
     </section>
   );
 }
@@ -62,6 +89,20 @@ function _dayStart(d: Date): number {
 
 function _fmtDay(d: Date): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+/**
+ * True for a single-day recap — the daily-during-a-Slam runs. Used to
+ * gate the home-card hero image: only these get a photo, since they
+ * refresh daily. Weekly / multi-day digests stay text-only so the same
+ * image doesn't sit on the front page for days. Mirrors the <=30h
+ * boundary of coverageEyebrow's "Tennis recap" bucket.
+ */
+function isDailyRecap(d: { period_start: string | null; period_end: string | null }): boolean {
+  if (!d.period_start || !d.period_end) return false;
+  const hours =
+    (new Date(d.period_end).getTime() - new Date(d.period_start).getTime()) / 3_600_000;
+  return hours <= 30;
 }
 
 function coverageEyebrow(d: { period_start: string | null; period_end: string | null }): string {
