@@ -864,22 +864,19 @@ def tournament_matches_current(
     the frontend now) don't multiply into one SQL query per visitor
     per refresh.
 
-    Qualifying-bracket rounds are filtered out at the SQL level. They
-    add ~110 rows to a Slam payload and the only consumer (the
-    bracket / matches list) doesn't render them — but they squeeze
-    real main-draw matches past the limit cap, producing phantom
-    TBD slots on the bracket.
+    Qualifying + junior brackets are filtered out at the SQL level — the
+    matches list / bracket view don't render them, and they squeeze real
+    main-draw matches past the limit cap (phantom TBD bracket slots).
 
-    "Filtered out" is approximated as "round still carries api-tennis's
-    verbose prefix" (`"ATP Wimbledon - Quarter-finals"` — everything with
-    a " - " separator). The assumption is that a real main-draw match has
-    already been rewritten to a short code (QF, R128, …) by the Wikipedia
-    bracket scraper. That assumption breaks for a match that is LIVE right
-    now: it hasn't been reconstructed yet, so it still has the verbose
-    label and was wrongly dropped (Sinner vanishing off the live page mid-
-    QF). We therefore also keep LIVE/SUSPENDED rows regardless of label —
-    qualifying is long finished by main-draw time, so this doesn't let
-    qualifying back in.
+    Qualifying/junior are dropped for every tournament. Grand Slams get an
+    extra guard: api-tennis labels a Slam's qualifying bracket with the
+    SAME verbose round strings as its main draw, so text alone can't tell
+    them apart — there we keep only reconstructed short-code rounds (plus
+    live/suspended in-progress matches). Non-Slam events keep their verbose
+    main-draw rounds directly; many never get bracket-reconstructed, and
+    the old blanket "drop anything with a ' - '" rule emptied whole
+    tournaments (Washington ATP 500 showed zero matches despite a full R16
+    on the schedule).
     """
     canonical = _canonical_url_slug(slug)
     cache_key = (tour.value, canonical, status, limit)
@@ -894,18 +891,28 @@ def tournament_matches_current(
         select(Match)
         .join(Tournament, Tournament.id == Match.tournament_id)
         .where(Match.tournament_id == t.id)
-        .where(
+    )
+    # Always drop the brackets the matches list / bracket view don't
+    # render: junior (Boys/Girls, null-round-at-Slam — needs the
+    # Tournament join above) and qualifying. At non-Slams qualifying is
+    # labelled explicitly ("… - Qualifying 1"), so an ilike catches it;
+    # keep NULL rounds (a legit not-yet-labelled main-draw fixture).
+    stmt = exclude_junior_rounds(stmt)
+    stmt = stmt.where(Match.round.is_(None) | ~Match.round.ilike("%qualif%"))
+    if t.category == TournamentCategory.GRAND_SLAM:
+        # Slams are the hard case: api-tennis labels the qualifying bracket
+        # with the SAME verbose strings as the main draw ("… - Quarter-
+        # finals"), so text can't separate them. Fall back to the
+        # reconstructed short-code signal — keep short-code rounds (main
+        # draw, rewritten by the Wikipedia scraper) plus any LIVE/SUSPENDED
+        # row (in-progress main-draw not yet reconstructed). Non-Slam
+        # events keep their verbose main-draw rounds as-is: many never get
+        # reconstructed, and blanket-dropping verbose rounds emptied whole
+        # tournaments (Washington ATP 500 returned zero matches).
+        stmt = stmt.where(
             ~Match.round.contains(" - ")
             | Match.status.in_([MatchStatus.LIVE, MatchStatus.SUSPENDED])
         )
-    )
-    # The LIVE/SUSPENDED escape hatch above (added so in-progress
-    # main-draw matches aren't dropped while still carrying api-tennis's
-    # verbose label) also let live JUNIOR matches through — the blanket
-    # " - " filter used to catch those. Re-apply the junior exclusion
-    # explicitly. Needs the Tournament join for its null-round-at-Slam
-    # guard, hence the join above.
-    stmt = exclude_junior_rounds(stmt)
     if status:
         from app.api._helpers import filter_status
         stmt = filter_status(stmt, status)
