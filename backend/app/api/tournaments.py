@@ -207,6 +207,37 @@ def _collapse_joint_brands(items: list[IndexTournament]) -> list[IndexTournament
     return out
 
 
+# Tiers with a formal qualifying draw that finishes before the main draw
+# and where api-tennis round data is reliable enough to infer the phase.
+# Challenger / ITF excluded — their round labels are too spotty, so the
+# "no main-draw round yet ⇒ qualifying" inference would over-fire.
+_QUALIFYING_ELIGIBLE_CATEGORIES = frozenset({
+    TournamentCategory.GRAND_SLAM,
+    TournamentCategory.ATP_FINALS,
+    TournamentCategory.WTA_FINALS,
+    TournamentCategory.ATP_1000,
+    TournamentCategory.WTA_1000,
+    TournamentCategory.ATP_500,
+    TournamentCategory.WTA_500,
+    TournamentCategory.ATP_250,
+    TournamentCategory.WTA_250,
+})
+
+
+def _is_main_draw_round(round_str: str) -> bool:
+    """True if a round string represents a main-draw match — a short code
+    (R128…F, from the bracket parsers) or a verbose non-qualifying round
+    that resolves to a real draw position ("… - 1/64-finals"). Empty /
+    qualifying rounds are not main-draw."""
+    if not round_str:
+        return False
+    if is_main_draw_short_code(round_str):
+        return True
+    if is_qualifying_round(round_str):
+        return False
+    return round_depth(round_str) > 0
+
+
 def _compute_index_sections(session: Session) -> list[tuple[str, str, list[IndexTournament]]]:
     """All the heavy lifting for tournaments-index.
 
@@ -271,6 +302,13 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
             continue
         has_active_match.add(tid)
         phase_rounds[tid].append(round_str or "")
+    cat_by_tid: dict[int, TournamentCategory] = dict(
+        session.exec(
+            select(Tournament.id, Tournament.category).where(
+                Tournament.id.in_(has_active_match)
+            )
+        ).all()
+    ) if has_active_match else {}
     # start_date < today gating for case (b) — only consider tournaments
     # with a known start date strictly in the future.
     pre_start_ids = {
@@ -292,10 +330,26 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
     }
     tournament_phase: dict[int, str] = {}
     for tid, rounds in phase_rounds.items():
-        if rounds and all(is_qualifying_round(r) for r in rounds):
+        if not rounds:
+            continue
+        # A main-draw round on today's / live schedule means the main
+        # draw is underway — never label that "qualifying".
+        if any(_is_main_draw_round(r) for r in rounds):
+            continue
+        # Explicit qualifying markers ("Q1", "Qualifying 2") — trust them
+        # for any tier.
+        if any(is_qualifying_round(r) for r in rounds):
+            tournament_phase[tid] = "qualifying"
+        # Otherwise, a tour-level event whose only active matches carry no
+        # main-draw round yet is in its qualifying week. api-tennis often
+        # ships qualifying rows with a NULL round (Cincinnati), and our
+        # start_date can be stale, so the "before start_date" check below
+        # can't catch it — but "no main-draw round has appeared" is a
+        # reliable proxy since qualifying always finishes first.
+        elif cat_by_tid.get(tid) in _QUALIFYING_ELIGIBLE_CATEGORIES:
             tournament_phase[tid] = "qualifying"
     for tid in pre_start_ids - main_draw_active_ids:
-        tournament_phase[tid] = "qualifying"
+        tournament_phase.setdefault(tid, "qualifying")
 
     # "In progress" needs to be robust — Rome was disappearing from the live
     # section despite being mid-tournament because the original logic relied
