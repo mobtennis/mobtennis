@@ -340,13 +340,19 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
         # for any tier.
         if any(is_qualifying_round(r) for r in rounds):
             tournament_phase[tid] = "qualifying"
-        # Otherwise, a tour-level event whose only active matches carry no
+        # Otherwise, a tour-level event whose active matches carry no
         # main-draw round yet is in its qualifying week. api-tennis often
         # ships qualifying rows with a NULL round (Cincinnati), and our
         # start_date can be stale, so the "before start_date" check below
         # can't catch it — but "no main-draw round has appeared" is a
-        # reliable proxy since qualifying always finishes first.
-        elif cat_by_tid.get(tid) in _QUALIFYING_ELIGIBLE_CATEGORIES:
+        # reliable proxy since qualifying always finishes first. Require a
+        # handful of concurrent matches (a real qualifying draw) so a lone
+        # stray fixture — often a mis-categorised minor event — doesn't get
+        # mislabelled.
+        elif (
+            cat_by_tid.get(tid) in _QUALIFYING_ELIGIBLE_CATEGORIES
+            and len(rounds) >= 3
+        ):
             tournament_phase[tid] = "qualifying"
     for tid in pre_start_ids - main_draw_active_ids:
         tournament_phase.setdefault(tid, "qualifying")
