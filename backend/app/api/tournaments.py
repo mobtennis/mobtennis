@@ -332,26 +332,25 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
     for tid, rounds in phase_rounds.items():
         if not rounds:
             continue
-        # A main-draw round on today's / live schedule means the main
-        # draw is underway — never label that "qualifying".
-        if any(_is_main_draw_round(r) for r in rounds):
+        n_main = sum(1 for r in rounds if _is_main_draw_round(r))
+        n_other = len(rounds) - n_main  # NULL rounds + explicit qualifying
+        has_qual_marker = any(is_qualifying_round(r) for r in rounds)
+        # A qualifying bracket has its own late rounds, and api-tennis
+        # labels them with MAIN-DRAW names — a Masters qualifying final
+        # comes through as "Cincinnati - Final", identical to the real
+        # final. So a couple of "main-draw" rows don't prove the main draw
+        # has started; only treat it as underway when those rows actually
+        # outnumber the unlabelled/qualifying ones (a real main-draw day is
+        # a flood of same-round matches).
+        if n_main > n_other and not has_qual_marker:
             continue
-        # Explicit qualifying markers ("Q1", "Qualifying 2") — trust them
-        # for any tier.
-        if any(is_qualifying_round(r) for r in rounds):
-            tournament_phase[tid] = "qualifying"
-        # Otherwise, a tour-level event whose active matches carry no
-        # main-draw round yet is in its qualifying week. api-tennis often
-        # ships qualifying rows with a NULL round (Cincinnati), and our
-        # start_date can be stale, so the "before start_date" check below
-        # can't catch it — but "no main-draw round has appeared" is a
-        # reliable proxy since qualifying always finishes first. Require a
-        # handful of concurrent matches (a real qualifying draw) so a lone
-        # stray fixture — often a mis-categorised minor event — doesn't get
-        # mislabelled.
-        elif (
+        # Qualifying: explicit markers (any tier), or a tour-tier event
+        # whose active schedule is dominated by non-main-draw matches — a
+        # real qualifying draw (>=3), not a lone stray (Tyler).
+        if has_qual_marker or (
             cat_by_tid.get(tid) in _QUALIFYING_ELIGIBLE_CATEGORIES
-            and len(rounds) >= 3
+            and n_other >= 3
+            and n_other > n_main
         ):
             tournament_phase[tid] = "qualifying"
     for tid in pre_start_ids - main_draw_active_ids:
