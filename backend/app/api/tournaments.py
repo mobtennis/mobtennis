@@ -97,6 +97,15 @@ class IndexTournament(BaseModel):
     # schedule, so the label disappears on its own once the main draw
     # is on the calendar.
     phase: str | None = None
+    # How far along the event is, for ordering "Happening now": the round
+    # depth of the *earliest* round still on today's schedule (round of 128
+    # = 40 … final = 100; qualifying = 10–25; see rounds.round_depth). Using
+    # the earliest-active round rather than the deepest makes it robust to
+    # api-tennis mislabeling a qualifying-bracket final as "… - Final" — a
+    # bogus deep label never lowers the earliest-active round, so an event in
+    # its opening rounds stays shallow. Larger = further along; not surfaced
+    # in the UI, purely a sort input.
+    stage_depth: int = 0
     # Description blurbs are intentionally NOT included here — at ~150–500 chars
     # × every tournament in the catalog, they push the index response past 2 MB
     # and break Next.js ISR caching. The detail endpoint serves the full blurb
@@ -203,6 +212,10 @@ def _collapse_joint_brands(items: list[IndexTournament]) -> list[IndexTournament
         # veto the active side's signal.
         phases = {x.phase for x in group if x.phase is not None}
         primary.phase = phases.pop() if phases else None
+        # Stage: the brand is as advanced as its furthest-along side (ATP
+        # and WTA draws run on the same schedule, but one gender's final can
+        # land a day before the other's).
+        primary.stage_depth = max(x.stage_depth for x in group)
         out.append(primary)
     return out
 
@@ -374,6 +387,19 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
     for tid in pre_start_ids - main_draw_started_ids:
         tournament_phase.setdefault(tid, "qualifying")
 
+    # Stage depth per tournament — the earliest round still in play today
+    # (see IndexTournament.stage_depth). Drives the "Happening now" ordering
+    # so an event at its final outranks one in its opening rounds within the
+    # same tier. `round_depth` returns 0 for NULL / unrecognised rounds; we
+    # take the min over the rounds that DO resolve (>0), so an event whose
+    # only labelled matches are early-round still gets a real depth, and the
+    # spurious "- Final" rows a qualifying bracket emits can't drag it deep.
+    stage_depth_by_tid: dict[int, int] = {}
+    for tid, rounds in phase_rounds.items():
+        depths = [d for d in (round_depth(r) for r in rounds) if d > 0]
+        if depths:
+            stage_depth_by_tid[tid] = min(depths)
+
     # "In progress" needs to be robust — Rome was disappearing from the live
     # section despite being mid-tournament because the original logic relied
     # *only* on a derived match-day window, which fails in three real-world
@@ -515,21 +541,35 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
             is_in_progress=t.id in in_progress_ids,
             tours=[t.tour.value],
             phase=tournament_phase.get(t.id),
+            stage_depth=stage_depth_by_tid.get(t.id, 0),
         )
 
     items = [to_index(t) for t in by_series.values()]
     items = _collapse_joint_brands(items)
 
     # "Happening now": any tournament currently in its date window, not just
-    # those with live matches this instant. Order by current activity first
-    # (live matches > today's count > tier > name).
-    # Tier *always* trumps activity: a Grand Slam with 0 matches in play this
-    # second still outranks a Challenger with 5 simultaneous live matches.
-    # Within the same tier we then break ties on current activity (live > today)
-    # and finally alphabetically for stability.
+    # those with live matches this instant. Ordering, in priority order:
+    #   1. Tier — a Grand Slam with 0 matches in play this second still
+    #      outranks a Challenger with 5 simultaneous live matches.
+    #   2. Phase — a qualifying event sits below every main-draw event in
+    #      its tier (nobody wants Cincinnati's qualifiers above a 1000 final).
+    #   3. Stage depth — how far along the event is. This is the fix for the
+    #      old "sort purely by match volume" bug: a draw has the MOST matches
+    #      at its start (round of 128) and the FEWEST at its final, so ranking
+    #      on volume floated opening-round events above ones reaching their
+    #      climax. Deepest stage first (final > semis > … > first round).
+    #   4/5. Current activity (live > today's count) as tie-breakers.
+    #   6. Name, for stable ordering.
     live_section = sorted(
         (i for i in items if i.is_in_progress),
-        key=lambda i: (tier_weight(i.category), -i.live_count, -i.today_count, i.name),
+        key=lambda i: (
+            tier_weight(i.category),
+            1 if i.phase == "qualifying" else 0,
+            -i.stage_depth,
+            -i.live_count,
+            -i.today_count,
+            i.name,
+        ),
     )
 
     out: list[tuple[str, str, list[IndexTournament]]] = []
