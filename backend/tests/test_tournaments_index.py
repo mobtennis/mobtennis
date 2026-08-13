@@ -37,7 +37,15 @@ def _tournament(session, slug: str, category: TournamentCategory) -> Tournament:
     return t
 
 
-def _matches_today(session, t: Tournament, p: Player, *, round: str, n: int) -> None:
+def _matches_today(
+    session,
+    t: Tournament,
+    p: Player,
+    *,
+    round: str | None,
+    n: int,
+    status: MatchStatus = MatchStatus.SCHEDULED,
+) -> None:
     noon = datetime.combine(date.today(), time(12, 0))
     for _ in range(n):
         session.add(
@@ -45,7 +53,7 @@ def _matches_today(session, t: Tournament, p: Player, *, round: str, n: int) -> 
                 tournament_id=t.id,
                 player1_id=p.id,
                 player2_id=p.id,
-                status=MatchStatus.SCHEDULED,
+                status=status,
                 scheduled_at=noon,
                 round=round,
             )
@@ -71,6 +79,27 @@ def test_final_stage_outranks_opening_rounds_despite_volume(session, player):
 
     order = _live_order(session)
     assert order.index("Canada") < order.index("Cincinnati")
+
+
+def test_null_round_today_falls_back_to_deepest_reached(session, player):
+    """When today's matches carry no usable round (api-tennis ships some
+    events' final-weekend matches with a NULL round, e.g. Montreal), stage is
+    inferred from how far the draw has reached — so it still outranks an event
+    genuinely in its opening rounds."""
+    late = _tournament(session, "montreal", TournamentCategory.ATP_1000)
+    opening = _tournament(session, "cincinnati", TournamentCategory.ATP_1000)
+
+    # Montreal: real early/mid rounds already FINISHED (so they inform "deepest
+    # reached" but aren't part of the front of the draw), and today's only
+    # unplayed match — the final — has no round label.
+    for rnd in ("R128", "R64", "R32", "R16", "QF", "SF"):
+        _matches_today(session, late, player, round=rnd, n=1, status=MatchStatus.FINISHED)
+    _matches_today(session, late, player, round=None, n=1)  # today's final, unlabelled
+
+    _matches_today(session, opening, player, round="R128", n=44)
+
+    order = _live_order(session)
+    assert order.index("Montreal") < order.index("Cincinnati")
 
 
 def test_tier_still_trumps_stage(session, player):

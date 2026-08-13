@@ -97,14 +97,14 @@ class IndexTournament(BaseModel):
     # schedule, so the label disappears on its own once the main draw
     # is on the calendar.
     phase: str | None = None
-    # How far along the event is, for ordering "Happening now": the round
-    # depth of the *earliest* round still on today's schedule (round of 128
-    # = 40 … final = 100; qualifying = 10–25; see rounds.round_depth). Using
-    # the earliest-active round rather than the deepest makes it robust to
-    # api-tennis mislabeling a qualifying-bracket final as "… - Final" — a
-    # bogus deep label never lowers the earliest-active round, so an event in
-    # its opening rounds stays shallow. Larger = further along; not surfaced
-    # in the UI, purely a sort input.
+    # How far along the event is, for ordering "Happening now" (round of 128
+    # = 40 … final = 100; qualifying = 10–25; see rounds.round_depth). Larger
+    # = further along. Primarily the *earliest* round still to be played today
+    # (robust to api-tennis mislabeling a qualifying final as "… - Final" — a
+    # bogus deep label can't lower the earliest-active round); falls back to
+    # the deepest round the draw has reached when today's matches carry no
+    # usable round. Not surfaced in the UI, purely a sort input. See
+    # _compute_index_sections for the full derivation.
     stage_depth: int = 0
     # Description blurbs are intentionally NOT included here — at ~150–500 chars
     # × every tournament in the catalog, they push the index response past 2 MB
@@ -315,8 +315,14 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
     #       authoritative.
     has_active_match: set[int] = set()
     phase_rounds: dict[int, list[str]] = defaultdict(list)
+    # Rounds of matches still to be contested today (scheduled / in play) —
+    # the "front of the draw". Excludes today's already-finished matches so
+    # a completed semi-final doesn't hold a tournament's stage back once only
+    # its final remains. Drives stage_depth below.
+    front_rounds: dict[int, list[str]] = defaultdict(list)
+    _UNFINISHED = (MatchStatus.SCHEDULED, MatchStatus.LIVE, MatchStatus.SUSPENDED)
     phase_rows = session.exec(
-        select(Match.tournament_id, Match.round)
+        select(Match.tournament_id, Match.round, Match.status)
         .where(
             (Match.status.in_([MatchStatus.LIVE, MatchStatus.SUSPENDED]))
             | (
@@ -325,11 +331,13 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
             )
         )
     ).all()
-    for tid, round_str in phase_rows:
+    for tid, round_str, status in phase_rows:
         if tid is None:
             continue
         has_active_match.add(tid)
         phase_rounds[tid].append(round_str or "")
+        if status in _UNFINISHED:
+            front_rounds[tid].append(round_str or "")
     cat_by_tid: dict[int, TournamentCategory] = dict(
         session.exec(
             select(Tournament.id, Tournament.category).where(
@@ -343,14 +351,30 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
     # today) is still recognised via its finished early rounds. Uses the
     # early/mid-round signal that a qualifying bracket can't fake.
     main_draw_started_ids: set[int] = set()
+    # Deepest round each active tournament has reached anywhere in its draw —
+    # the fallback stage signal for when today's matches carry no usable round
+    # (api-tennis sometimes ships a tournament's final-weekend matches with a
+    # NULL round, e.g. Montreal). `_reached_all` trusts every round;
+    # `_reached_main` ignores the deep verbose labels (QF/SF/F) a qualifying
+    # bracket fakes, so we can fall back to the mislabel-safe value for events
+    # whose main draw hasn't demonstrably started.
+    _reached_all: dict[int, int] = defaultdict(int)
+    _reached_main: dict[int, int] = defaultdict(int)
     if has_active_match:
         for tid, rnd in session.exec(
             select(Match.tournament_id, Match.round).where(
                 Match.tournament_id.in_(has_active_match)
             )
         ).all():
-            if tid is not None and rnd and _indicates_main_draw_started(rnd):
+            if tid is None or not rnd:
+                continue
+            if _indicates_main_draw_started(rnd):
                 main_draw_started_ids.add(tid)
+            d = round_depth(rnd)
+            if d > _reached_all[tid]:
+                _reached_all[tid] = d
+            if d <= 70 and d > _reached_main[tid]:
+                _reached_main[tid] = d
     # start_date < today gating for case (b) — only consider tournaments
     # with a known start date strictly in the future.
     pre_start_ids = {
@@ -387,18 +411,28 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
     for tid in pre_start_ids - main_draw_started_ids:
         tournament_phase.setdefault(tid, "qualifying")
 
-    # Stage depth per tournament — the earliest round still in play today
-    # (see IndexTournament.stage_depth). Drives the "Happening now" ordering
-    # so an event at its final outranks one in its opening rounds within the
-    # same tier. `round_depth` returns 0 for NULL / unrecognised rounds; we
-    # take the min over the rounds that DO resolve (>0), so an event whose
-    # only labelled matches are early-round still gets a real depth, and the
-    # spurious "- Final" rows a qualifying bracket emits can't drag it deep.
+    # Stage depth per tournament — how far along it is, for "Happening now"
+    # ordering (see IndexTournament.stage_depth). Two-signal, in priority:
+    #   1. Front of the draw: the shallowest round still to be contested today
+    #      (min over front_rounds that resolve). `round_depth` is 0 for NULL /
+    #      unrecognised rounds, so we min over the >0 set. Using the *earliest*
+    #      remaining round means the spurious "- Final" rows a qualifying
+    #      bracket emits can't drag an opening-round event deep — its real
+    #      early-round matches keep it shallow.
+    #   2. Fallback — deepest round reached: when today's matches carry no
+    #      usable round (all NULL, e.g. Montreal's final weekend), fall back to
+    #      how far the draw has progressed. Trust the full depth once the main
+    #      draw has demonstrably started; otherwise use the mislabel-safe value
+    #      that ignores fakeable QF/SF/F labels.
     stage_depth_by_tid: dict[int, int] = {}
-    for tid, rounds in phase_rounds.items():
-        depths = [d for d in (round_depth(r) for r in rounds) if d > 0]
-        if depths:
-            stage_depth_by_tid[tid] = min(depths)
+    for tid in has_active_match:
+        front = [d for d in (round_depth(r) for r in front_rounds.get(tid, [])) if d > 0]
+        if front:
+            stage_depth_by_tid[tid] = min(front)
+        elif tid in main_draw_started_ids:
+            stage_depth_by_tid[tid] = _reached_all[tid]
+        else:
+            stage_depth_by_tid[tid] = _reached_main[tid]
 
     # "In progress" needs to be robust — Rome was disappearing from the live
     # section despite being mid-tournament because the original logic relied
