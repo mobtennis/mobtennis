@@ -238,6 +238,21 @@ def _is_main_draw_round(round_str: str) -> bool:
     return round_depth(round_str) > 0
 
 
+def _indicates_main_draw_started(round_str: str) -> bool:
+    """True only for a round the MAIN draw uniquely produces — an early /
+    mid round (R256…R16, i.e. 1/128- through 1/8-finals / first–fourth
+    round). Deliberately EXCLUDES the late rounds (QF, SF, Final): a
+    qualifying bracket has its own final and api-tennis labels it with the
+    same main-draw name ("Cincinnati - Final"), so those don't prove the
+    main draw has begun. A qualifying draw is tiny and never reaches these
+    big early rounds, so their presence is a reliable "main draw underway"
+    signal (round_depth: R256=30 … R16/1-8-finals=70; QF=80, SF=90, F=100).
+    """
+    if not round_str or is_qualifying_round(round_str):
+        return False
+    return 30 <= round_depth(round_str) <= 70
+
+
 def _compute_index_sections(session: Session) -> list[tuple[str, str, list[IndexTournament]]]:
     """All the heavy lifting for tournaments-index.
 
@@ -309,6 +324,20 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
             )
         ).all()
     ) if has_active_match else {}
+    # Which active tournaments' MAIN draws have demonstrably started —
+    # scanned over their whole match history (any status), not just today,
+    # so an event now in its semis (only late/NULL rounds on the schedule
+    # today) is still recognised via its finished early rounds. Uses the
+    # early/mid-round signal that a qualifying bracket can't fake.
+    main_draw_started_ids: set[int] = set()
+    if has_active_match:
+        for tid, rnd in session.exec(
+            select(Match.tournament_id, Match.round).where(
+                Match.tournament_id.in_(has_active_match)
+            )
+        ).all():
+            if tid is not None and rnd and _indicates_main_draw_started(rnd):
+                main_draw_started_ids.add(tid)
     # start_date < today gating for case (b) — only consider tournaments
     # with a known start date strictly in the future.
     pre_start_ids = {
@@ -318,42 +347,31 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
             .where(Tournament.start_date > today)
         ).all()
     } & has_active_match
-    # Authoritative "main draw is underway" signal: an R128/R64/.../F
-    # short code in today's rounds. Only the bracket parsers emit
-    # those — api-tennis stays verbose — so seeing one means main
-    # draw R1 (or later) has matches on the schedule, which overrules
-    # the pre-start-date inference. Catches the Wimbledon case where
-    # the stored start_date is one day later than the actual Day 1.
-    main_draw_active_ids = {
-        tid for tid, rounds in phase_rounds.items()
-        if any(is_main_draw_short_code(r) for r in rounds)
-    }
     tournament_phase: dict[int, str] = {}
     for tid, rounds in phase_rounds.items():
         if not rounds:
             continue
-        n_main = sum(1 for r in rounds if _is_main_draw_round(r))
-        n_other = len(rounds) - n_main  # NULL rounds + explicit qualifying
-        has_qual_marker = any(is_qualifying_round(r) for r in rounds)
-        # A qualifying bracket has its own late rounds, and api-tennis
-        # labels them with MAIN-DRAW names — a Masters qualifying final
-        # comes through as "Cincinnati - Final", identical to the real
-        # final. So a couple of "main-draw" rows don't prove the main draw
-        # has started; only treat it as underway when those rows actually
-        # outnumber the unlabelled/qualifying ones (a real main-draw day is
-        # a flood of same-round matches).
-        if n_main > n_other and not has_qual_marker:
+        # Main draw has demonstrably started (has early main-draw rounds in
+        # its history) → never "qualifying", even if today's schedule is
+        # only late rounds / NULL-round singles (an event in its semis).
+        if tid in main_draw_started_ids:
             continue
+        has_qual_marker = any(is_qualifying_round(r) for r in rounds)
+        # Count matches that AREN'T main-draw rounds (NULL or qualifying).
+        # api-tennis often ships qualifying rows with a NULL round, and
+        # mislabels a qualifying final as "… - Final" (counted main), so we
+        # lean on "the main draw hasn't started" (checked above) plus a
+        # real draw of non-main matches, not on the labels alone.
+        n_nonmain = sum(1 for r in rounds if not _is_main_draw_round(r))
         # Qualifying: explicit markers (any tier), or a tour-tier event
-        # whose active schedule is dominated by non-main-draw matches — a
-        # real qualifying draw (>=3), not a lone stray (Tyler).
+        # whose main draw hasn't started yet and has a real draw of active
+        # matches (>=3 — ignore a lone stray like a mis-categorised event).
         if has_qual_marker or (
             cat_by_tid.get(tid) in _QUALIFYING_ELIGIBLE_CATEGORIES
-            and n_other >= 3
-            and n_other > n_main
+            and n_nonmain >= 3
         ):
             tournament_phase[tid] = "qualifying"
-    for tid in pre_start_ids - main_draw_active_ids:
+    for tid in pre_start_ids - main_draw_started_ids:
         tournament_phase.setdefault(tid, "qualifying")
 
     # "In progress" needs to be robust — Rome was disappearing from the live
