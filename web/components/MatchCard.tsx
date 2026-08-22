@@ -8,6 +8,7 @@ import { formatRound, formatScore, formatSetScore } from "@/lib/format";
 import { LiveDot, SuspendedDot } from "@/components/LiveDot";
 import { LocalTime } from "@/components/LocalTime";
 import { MomentumSpark } from "@/components/MomentumSpark";
+import { MomentumBuilding } from "@/components/MomentumBuilding";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 import { useLiveMatch } from "@/lib/live-stream";
@@ -26,42 +27,65 @@ export function MatchCard({ match: initial, dense = false }: { match: MatchSumma
   const isSuspended = match.status === "suspended";
   const finished = match.status === "finished";
   const round = formatRound(match.round);
+  const inPlay = isLive || isSuspended;
+
+  const [p1Game, p2Game] = (match.current_game ?? "").split(/\s*-\s*/, 2);
+  const showGame = !dense && isLive;
+
+  // Momentum teaser — a compressed sparkline (or a "building" placeholder
+  // for a live match still accruing games) tucked into the white space
+  // between the names and the scores. Links through with the whole card.
+  const spark = match.momentum_spark;
+  const momentumSlot = spark && spark.length > 1 ? (
+    <MomentumSpark spark={spark} className="h-7 w-12 shrink-0 self-center text-text-muted" />
+  ) : inPlay ? (
+    <span className="flex shrink-0 items-center self-center px-0.5">
+      <MomentumBuilding size="mini" />
+    </span>
+  ) : null;
 
   return (
     <Link
       href={`/matches/${match.id}`}
       className="group block overflow-hidden rounded-md border border-ink-700 bg-ink-900 px-3 py-2.5 transition hover:border-ink-600 hover:bg-ink-800"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          {(() => {
-            // Split "30 - 40" / "AD - 40" into per-player current-game points
-            // so each player's row gets their own point as a final column.
-            const [p1Game, p2Game] = (match.current_game ?? "").split(/\s*-\s*/, 2);
-            const showGame = !dense && isLive;
-            return (
-              <>
-                <PlayerRow
-                  player={match.player1}
-                  seed={match.player1_seed}
-                  sets={sets.map((s) => s.split("-")[0])}
-                  isServing={match.server_slot === 1}
-                  isWinner={finished && match.winner_slot === 1}
-                  isLoser={finished && match.winner_slot === 2}
-                  gamePoints={showGame ? p1Game : null}
-                />
-                <PlayerRow
-                  player={match.player2}
-                  seed={match.player2_seed}
-                  sets={sets.map((s) => s.split("-")[1] ?? "")}
-                  isServing={match.server_slot === 2}
-                  isWinner={finished && match.winner_slot === 2}
-                  isLoser={finished && match.winner_slot === 1}
-                  gamePoints={showGame ? p2Game : null}
-                />
-              </>
-            );
-          })()}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-stretch gap-2.5">
+          {/* names */}
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <NameCell
+              player={match.player1}
+              seed={match.player1_seed}
+              isServing={match.server_slot === 1}
+              isWinner={finished && match.winner_slot === 1}
+              isLoser={finished && match.winner_slot === 2}
+            />
+            <NameCell
+              player={match.player2}
+              seed={match.player2_seed}
+              isServing={match.server_slot === 2}
+              isWinner={finished && match.winner_slot === 2}
+              isLoser={finished && match.winner_slot === 1}
+            />
+          </div>
+
+          {momentumSlot}
+
+          {/* scores */}
+          <div className="flex shrink-0 flex-col justify-center gap-1.5">
+            <ScoreCell
+              sets={sets.map((s) => s.split("-")[0])}
+              isWinner={finished && match.winner_slot === 1}
+              isLoser={finished && match.winner_slot === 2}
+              gamePoints={showGame ? p1Game : null}
+            />
+            <ScoreCell
+              sets={sets.map((s) => s.split("-")[1] ?? "")}
+              isWinner={finished && match.winner_slot === 2}
+              isLoser={finished && match.winner_slot === 1}
+              gamePoints={showGame ? p2Game : null}
+            />
+          </div>
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-0.5 text-right">
@@ -78,95 +102,85 @@ export function MatchCard({ match: initial, dense = false }: { match: MatchSumma
               <LocalTime iso={match.scheduled_at} variant="match" fallback="TBD" />
             </span>
           ) : null}
-          {/* Tour pill — sits between status and round labels in the
-              meta column. Decorative only; the surrounding <Link>
-              handles the click. */}
           {match.tournament_tour && <TourPill tour={match.tournament_tour} />}
           {round && (
             <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">{round}</span>
           )}
         </div>
       </div>
-
-      {/* Momentum teaser — only for matches we have point-by-point for.
-          Hints the full wave is a tap away; the whole card is the link. */}
-      {match.momentum_spark && match.momentum_spark.length > 1 && (
-        <div className="mt-2 flex items-center gap-2 border-t border-ink-700/60 pt-1.5 text-text-muted">
-          <span className="shrink-0 text-[8px] font-bold uppercase tracking-[0.14em]">
-            Momentum
-          </span>
-          <MomentumSpark spark={match.momentum_spark} className="h-4 min-w-0 flex-1" />
-          <span className="shrink-0 text-[9px] font-medium text-accent opacity-0 transition group-hover:opacity-100">
-            View →
-          </span>
-        </div>
-      )}
     </Link>
   );
 }
 
-function PlayerRow({
+function NameCell({
   player,
   seed,
-  sets,
   isServing,
   isWinner = false,
   isLoser = false,
-  gamePoints = null,
 }: {
   player: MatchSummary["player1"];
   seed?: number | null;
-  sets: string[];
   isServing: boolean;
   isWinner?: boolean;
   isLoser?: boolean;
-  gamePoints?: string | null;
 }) {
   if (!player) {
-    return <div className="text-text-muted">TBD</div>;
+    return <div className="flex h-8 items-center text-sm text-text-muted">TBD</div>;
   }
   return (
-    <div className={`flex items-center gap-2 ${isLoser ? "opacity-50" : ""}`}>
+    <div className={`flex h-8 items-center gap-2 ${isLoser ? "opacity-50" : ""}`}>
       <PlayerAvatar name={player.full_name} imageUrl={player.image_url} countryCode={player.country_code} />
       <span className={`min-w-0 flex-1 truncate text-sm ${isWinner ? "font-bold text-text-primary" : "font-medium"}`}>
         {isWinner && <WinnerCheck />}
         {seed != null && (
-          <span className="mr-1 text-[11px] font-semibold tnum text-text-muted">
-            [{seed}]
-          </span>
+          <span className="mr-1 text-[11px] font-semibold tnum text-text-muted">[{seed}]</span>
         )}
         <PlayerHoverCard slug={player.slug}>{player.full_name}</PlayerHoverCard>
         {isServing && (
           <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-accent align-middle" aria-label="serving" />
         )}
       </span>
-      <span className="flex shrink-0 items-center gap-1.5">
-        {sets.map((s, i) => (
-          <span
-            key={i}
-            className={`tnum w-5 text-right text-sm tabular-nums ${
-              isWinner ? "font-bold text-text-primary" : "font-semibold"
-            }`}
-          >
-            {formatSetScore(s || "")}
-          </span>
-        ))}
-        {gamePoints !== null && gamePoints !== "" && (
-          <>
-            <span className="h-4 w-px bg-ink-700" aria-hidden />
-            <span className="tnum w-7 text-right text-sm font-bold tabular-nums text-accent">
-              {gamePoints.trim()}
-            </span>
-          </>
-        )}
-      </span>
     </div>
   );
 }
 
-/** Small ATP/WTA badge tucked between the two player rows.
- * Color uses tour-conventional broadcasting tones — sky for ATP,
- * violet for WTA — distinct without being gendered. */
+function ScoreCell({
+  sets,
+  isWinner = false,
+  isLoser = false,
+  gamePoints = null,
+}: {
+  sets: string[];
+  isWinner?: boolean;
+  isLoser?: boolean;
+  gamePoints?: string | null;
+}) {
+  return (
+    <div className={`flex h-8 items-center justify-end gap-1.5 ${isLoser ? "opacity-50" : ""}`}>
+      {sets.map((s, i) => (
+        <span
+          key={i}
+          className={`tnum w-5 text-right text-sm tabular-nums ${
+            isWinner ? "font-bold text-text-primary" : "font-semibold"
+          }`}
+        >
+          {formatSetScore(s || "")}
+        </span>
+      ))}
+      {gamePoints !== null && gamePoints !== "" && (
+        <>
+          <span className="h-4 w-px bg-ink-700" aria-hidden />
+          <span className="tnum w-7 text-right text-sm font-bold tabular-nums text-accent">
+            {gamePoints.trim()}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Small ATP/WTA badge tucked into the meta column. */
 function TourPill({ tour }: { tour: string }) {
   const isAtp = tour.toLowerCase() === "atp";
   const cls = isAtp

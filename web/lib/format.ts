@@ -52,6 +52,14 @@ const ROUND_ABBREV: Record<string, string> = {
   "qualification": "Q",
 };
 
+/** 329 -> "5h 29m", 92 -> "1h 32m", 47 -> "47m". Null/0 -> "". */
+export function formatDuration(minutes: number | null | undefined): string {
+  if (!minutes || minutes <= 0) return "";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 export function formatRound(round: string | null): string {
   if (!round) return "";
   const lastDash = round.lastIndexOf(" - ");

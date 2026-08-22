@@ -9,6 +9,7 @@ import {
 } from "@/lib/api";
 import { AdSlot } from "@/components/AdSlot";
 import { MomentumWave } from "@/components/MomentumWave";
+import { MomentumBuilding } from "@/components/MomentumBuilding";
 // LiveMatchListener removed — MatchDetailLiveHeader owns its own SSE
 // subscription via the shared live-stream hook.
 import { JsonLd } from "@/components/JsonLd";
@@ -142,9 +143,13 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
 
       <MatchDetailLiveHeader initial={match} />
 
-      {momentum && momentum.series.length > 4 && (
+      {momentum && momentum.series.length >= 4 ? (
         <MomentumWave data={momentum} />
-      )}
+      ) : match.status === "live" || match.status === "suspended" ? (
+        // Early in a live match there aren't enough games to read momentum
+        // yet — explain the wait instead of showing nothing.
+        <MomentumBuilding size="panel" />
+      ) : null}
 
       {match.blurb && match.blurb.paragraph && (
         <section

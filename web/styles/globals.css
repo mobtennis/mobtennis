@@ -28,3 +28,14 @@ body {
 .no-scrollbar { scrollbar-width: none; }
 
 a { color: inherit; }
+
+/* Momentum "building" placeholder — an equalizer of bars rising and
+   falling while a live match accrues enough games to read momentum. */
+@keyframes momentum-build {
+  0%, 100% { transform: scaleY(0.35); }
+  50%      { transform: scaleY(1); }
+}
+.momentum-bar { transform-origin: center; animation: momentum-build 1.1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .momentum-bar { animation: none; transform: scaleY(0.6); }
+}

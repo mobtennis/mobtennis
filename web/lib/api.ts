@@ -149,6 +149,7 @@ export type MatchSummary = {
   winner_slot: 1 | 2 | null;
   is_doubles: boolean;
   best_of: number;
+  duration_minutes: number | null;
   api_tennis_id: string | null;
   bracket_position: number | null;
   player1_seed: number | null;

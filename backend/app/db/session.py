@@ -106,6 +106,7 @@ def _migrate() -> None:
         # otherwise startup-time _migrate() trips on a missing table.
         ("matches", "stats_json", "TEXT"),
         ("matches", "momentum_json", "TEXT"),
+        ("matches", "duration_minutes", "INTEGER"),
         ("matches", "bracket_position", "INTEGER"),
         ("matches", "player1_seed", "INTEGER"),
         ("matches", "player2_seed", "INTEGER"),

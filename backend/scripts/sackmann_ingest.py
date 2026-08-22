@@ -292,6 +292,11 @@ def ingest_matches(session: Session, tour: Tour, years: list[int]) -> int:
                     is_doubles=False,
                     best_of=best_of,
                     sackmann_id=sackmann_match_id,
+                    duration_minutes=(
+                        int(row["minutes"])
+                        if (row.get("minutes") or "").strip().isdigit()
+                        else None
+                    ),
                 )
             )
             year_count += 1

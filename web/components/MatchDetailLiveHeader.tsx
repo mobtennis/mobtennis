@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 
 import type { MatchDetail, MatchSummary } from "@/lib/api";
-import { formatScore, formatSetScore } from "@/lib/format";
+import { formatDuration, formatScore, formatSetScore } from "@/lib/format";
 import { LiveDot, SuspendedDot } from "@/components/LiveDot";
 import { LocalTime } from "@/components/LocalTime";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
@@ -30,6 +30,7 @@ export function MatchDetailLiveHeader({ initial }: { initial: MatchDetail }) {
   const sets = formatScore(match.score);
   const isLive = match.status === "live";
   const isSuspended = match.status === "suspended";
+  const finished = match.status === "finished";
   const showGameScore = isLive;
   const [p1Game, p2Game] = (match.current_game ?? "").split(/\s*-\s*/, 2);
 
@@ -68,17 +69,20 @@ export function MatchDetailLiveHeader({ initial }: { initial: MatchDetail }) {
         />
       </div>
 
-      {/* Start time is only shown for upcoming matches — it tells the user
-          when to tune in. On finished matches it's noise at best; for
-          history imported from Sackmann the field is a bogus midnight
-          placeholder that rendered a meaningless "00:00". We don't have a
-          reliable match-duration source, so we show nothing rather than a
-          wrong number. */}
+      {/* Start time for upcoming matches (when to tune in); match duration
+          for finished ones where we have it (Sackmann `minutes`). We never
+          show scheduled_at on a finished match — for imported history it's a
+          bogus midnight placeholder that used to render a meaningless "00:00". */}
       {match.status === "scheduled" && match.scheduled_at && (
         <div className="mt-3 text-center text-xs text-text-muted">
           <LocalTime iso={match.scheduled_at} variant="match" />
         </div>
       )}
+      {finished && match.duration_minutes ? (
+        <div className="mt-3 text-center text-xs text-text-muted">
+          <span className="tabular-nums">{formatDuration(match.duration_minutes)}</span>
+        </div>
+      ) : null}
       {isSuspended && (
         <div className="mt-3 text-center text-xs italic text-amber-400/80">
           Play suspended — score frozen until play resumes.

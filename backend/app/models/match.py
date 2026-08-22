@@ -56,6 +56,10 @@ class Match(SQLModel, table=True):
     is_doubles: bool = False
     best_of: int = 3  # 3 or 5
 
+    # Match length in minutes (Sackmann `minutes` column). Nullable — not
+    # every historical row has it, and live/api-tennis matches don't supply it.
+    duration_minutes: int | None = None
+
     api_tennis_id: str | None = Field(default=None, index=True, unique=True)
     sackmann_id: str | None = Field(default=None, index=True)
 

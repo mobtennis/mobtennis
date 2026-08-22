@@ -44,6 +44,8 @@ class MatchSummary(BaseModel):
     winner_id: int | None = None
     is_doubles: bool = False
     best_of: int = 3
+    # Match length in minutes (Sackmann history). None when unknown.
+    duration_minutes: int | None = None
     # Provider's match ID. For api-tennis this is roughly chronological,
     # which is NOT the same as draw position — clients should use
     # `bracket_position` for ordering.

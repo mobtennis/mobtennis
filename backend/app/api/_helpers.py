@@ -84,6 +84,7 @@ def match_to_summary(session: Session, m: Match) -> MatchSummary:
         winner_slot=to_slot(m.winner_id),
         is_doubles=m.is_doubles,
         best_of=m.best_of,
+        duration_minutes=m.duration_minutes,
         api_tennis_id=m.api_tennis_id,
         bracket_position=m.bracket_position,
         player1_seed=m.player1_seed,
