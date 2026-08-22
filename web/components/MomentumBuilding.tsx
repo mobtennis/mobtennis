@@ -28,10 +28,10 @@ function wavePath(): { line: string; area: string } {
   return { line, area };
 }
 
-function BuildingWave() {
+function BuildingWave({ className = "h-10 flex-1" }: { className?: string }) {
   const { line, area } = wavePath();
   return (
-    <div className="relative h-10 flex-1 overflow-hidden rounded-md">
+    <div className={`relative overflow-hidden rounded-md ${className}`}>
       <svg
         viewBox="0 0 240 40"
         preserveAspectRatio="none"
@@ -69,14 +69,14 @@ function BuildingWave() {
 
 export function MomentumBuilding({ size = "mini" }: { size?: "mini" | "panel" }) {
   if (size === "mini") {
-    // A single throbbing dot in the card's centre slot — the tooltip carries
-    // the explanation; a fuller animation is too busy in a dense list.
+    // A tiny undulating wave in the card's centre slot — same language as the
+    // real momentum graph, just small. The tooltip carries the explanation.
     return (
       <span
-        className="flex items-center justify-center"
+        className="flex items-center"
         title="Momentum builds over the first few games"
       >
-        <span className="momentum-dot inline-block h-2 w-2 rounded-full bg-text-muted" />
+        <BuildingWave className="h-7 w-12 opacity-70" />
       </span>
     );
   }
