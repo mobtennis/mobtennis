@@ -155,6 +155,38 @@ export type MatchSummary = {
   player2_seed: number | null;
 };
 
+export type MomentumPoint = {
+  i: number;
+  set: number;
+  score: string;
+  server: 1 | 2;
+  winner: 1 | 2;
+  is_break: boolean;
+  kind: string;
+  m: number; // -100..+100, + = player1 surging
+};
+
+export type MomentumEvent = {
+  i: number;
+  set: number;
+  score: string;
+  winner: 1 | 2;
+  kind: string;
+  swing: number;
+};
+
+export type MomentumResponse = {
+  match_id: number;
+  status: MatchStatus;
+  player1: PlayerSummary | null;
+  player2: PlayerSummary | null;
+  final: number;
+  leader: 0 | 1 | 2;
+  n_games: number;
+  series: MomentumPoint[];
+  events: MomentumEvent[];
+};
+
 export type TournamentSummary = {
   slug: string;
   year: number;

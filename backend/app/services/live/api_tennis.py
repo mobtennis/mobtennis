@@ -72,6 +72,19 @@ class ApiTennisProvider(LiveScoresProvider):
         rows = await self._call("get_fixtures", date_start=today, date_stop=today)
         return [self._map(row) for row in rows]
 
+    async def fetch_match_pbp(self, external_id: str) -> list | None:
+        """Point-by-point for a single match via get_fixtures(match_key=…).
+
+        Works for both in-progress and completed matches — api-tennis retains
+        the pointbypoint array on the fixture row.
+        """
+        if not external_id:
+            return None
+        rows = await self._call("get_fixtures", match_key=str(external_id))
+        if not rows:
+            return None
+        return rows[0].get("pointbypoint") or None
+
     async def fetch_tournaments(self) -> list[TournamentMeta]:
         rows = await self._call("get_tournaments")
         out: list[TournamentMeta] = []

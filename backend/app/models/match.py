@@ -74,5 +74,10 @@ class Match(SQLModel, table=True):
     # historical match detail pages can show the same stats panel.
     stats_json: str | None = None
 
+    # JSON-encoded momentum series — derived from the same pointbypoint array
+    # (app/services/momentum.py). Oriented to player1 (+ = player1 surging).
+    # Refreshed on poll; persists after the match ends for the match page.
+    momentum_json: str | None = None
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

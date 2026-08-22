@@ -2,6 +2,7 @@ import json
 from datetime import datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import case
 from sqlmodel import Session, select
 
@@ -11,7 +12,10 @@ from app.models.match import Match, MatchStatus
 from app.models.player import Player
 from app.models.tournament import Tournament, TournamentCategory
 from app.schemas.match import MatchBlurb, MatchDetail, MatchStats, MatchSummary
+from app.schemas.player import PlayerSummary
+from app.services.live import get_live_provider
 from app.services.match_blurb import build_blurb, compute_h2h_context
+from app.services.momentum import compute_momentum
 
 router = APIRouter(prefix="/api/matches", tags=["matches"])
 
@@ -201,4 +205,88 @@ def get_match(match_id: int, session: Session = Depends(get_session)):
         finished_at=m.finished_at,
         stats=stats,
         blurb=blurb,
+    )
+
+
+# ---- Momentum -------------------------------------------------------------
+#
+# The momentum series (app/services/momentum.py) is persisted on the match
+# by the live-sync path. This endpoint serves it, and self-heals for a match
+# that has an api-tennis id but no stored series yet (e.g. a backfilled
+# historical row) by fetching the point-by-point on demand and caching it.
+
+class MomentumPoint(BaseModel):
+    i: int
+    set: int
+    score: str
+    server: int
+    winner: int
+    is_break: bool
+    kind: str
+    m: float
+
+
+class MomentumEvent(BaseModel):
+    i: int
+    set: int
+    score: str
+    winner: int
+    kind: str
+    swing: float
+
+
+class MomentumResponse(BaseModel):
+    match_id: int
+    status: str
+    player1: PlayerSummary | None
+    player2: PlayerSummary | None
+    final: float
+    leader: int  # 1 | 2 | 0 — who momentum favours at the end
+    n_games: int
+    series: list[MomentumPoint]
+    events: list[MomentumEvent]
+
+
+@router.get("/{match_id}/momentum", response_model=MomentumResponse)
+async def get_match_momentum(match_id: int, session: Session = Depends(get_session)):
+    m = session.get(Match, match_id)
+    if not m:
+        raise HTTPException(404, "Match not found")
+
+    payload = None
+    if m.momentum_json:
+        try:
+            payload = json.loads(m.momentum_json)
+        except (ValueError, TypeError):
+            payload = None
+
+    if payload is None:
+        # Self-heal: compute from provider point-by-point. Only matches
+        # created by the live-sync path carry an api-tennis id, and for those
+        # our player1 == api-tennis First Player, so no reorientation needed.
+        if not m.api_tennis_id:
+            raise HTTPException(404, "No momentum data for this match")
+        provider = get_live_provider()
+        try:
+            pbp = await provider.fetch_match_pbp(m.api_tennis_id)
+        finally:
+            close = getattr(provider, "aclose", None)
+            if close:
+                await close()
+        payload = compute_momentum(
+            pbp, complete=m.status == MatchStatus.FINISHED, first_is_player1=True
+        )
+        if payload is None:
+            raise HTTPException(404, "No momentum data for this match")
+        m.momentum_json = json.dumps(payload)
+        session.add(m)
+        session.commit()
+
+    summary = match_to_summary(session, m)
+    return MomentumResponse(
+        match_id=m.id,
+        status=m.status.value,
+        player1=summary.player1,
+        player2=summary.player2,
+        **payload,
     )

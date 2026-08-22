@@ -19,6 +19,7 @@ from app.services.categorize import categorize
 from app.services.live.base import LiveMatch
 from app.services.match_events import MatchEvent, detect_events
 from app.services.match_stats import compute_stats
+from app.services.momentum import compute_momentum
 from app.services.player_dedup import find_player_by_name, name_key
 
 
@@ -362,9 +363,16 @@ def upsert_live_matches(
             match.updated_at = datetime.utcnow()
             if lm.status == "finished" and not match.finished_at:
                 match.finished_at = datetime.utcnow()
-            stats = compute_stats(lm.raw.get("pointbypoint") if lm.raw else None)
+            pbp = lm.raw.get("pointbypoint") if lm.raw else None
+            stats = compute_stats(pbp)
             if stats is not None:
                 match.stats_json = json.dumps(stats)
+            # Momentum — same pbp. player1 == api First Player on the live path,
+            # so no reorientation needed. `complete` gates the set-won weight
+            # on the trailing (in-progress) set.
+            mom = compute_momentum(pbp, complete=lm.status == "finished")
+            if mom is not None:
+                match.momentum_json = json.dumps(mom)
             session.add(match)
 
             if p1 and p2 and match.id is not None:
@@ -383,7 +391,9 @@ def upsert_live_matches(
                     )
                 )
         else:
-            stats = compute_stats(lm.raw.get("pointbypoint") if lm.raw else None)
+            pbp = lm.raw.get("pointbypoint") if lm.raw else None
+            stats = compute_stats(pbp)
+            mom = compute_momentum(pbp, complete=lm.status == "finished")
             match = Match(
                 tournament_id=tournament_id,
                 round=lm.round,
@@ -402,6 +412,7 @@ def upsert_live_matches(
                 best_of=lm.best_of,
                 api_tennis_id=lm.provider_match_id,
                 stats_json=json.dumps(stats) if stats is not None else None,
+                momentum_json=json.dumps(mom) if mom is not None else None,
             )
             session.add(match)
         touched += 1

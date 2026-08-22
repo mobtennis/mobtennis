@@ -1,8 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { api, type MatchDetail, type VideoItemSummary } from "@/lib/api";
+import {
+  api,
+  type MatchDetail,
+  type MomentumResponse,
+  type VideoItemSummary,
+} from "@/lib/api";
 import { AdSlot } from "@/components/AdSlot";
+import { MomentumWave } from "@/components/MomentumWave";
 // LiveMatchListener removed — MatchDetailLiveHeader owns its own SSE
 // subscription via the shared live-stream hook.
 import { JsonLd } from "@/components/JsonLd";
@@ -76,6 +82,13 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
     { revalidate: 120 },
   ).catch(() => [] as VideoItemSummary[]);
 
+  // Momentum series — null when we have no point-by-point for this match.
+  // revalidate: 0 so a live match's wave keeps building on router.refresh().
+  const momentum = await api<MomentumResponse>(
+    `/api/matches/${id}/momentum`,
+    { revalidate: 0 },
+  ).catch(() => null);
+
   const competitors = [match.player1, match.player2]
     .filter((p): p is NonNullable<typeof p> => Boolean(p))
     .map((p) => ({
@@ -128,6 +141,10 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
       </Link>
 
       <MatchDetailLiveHeader initial={match} />
+
+      {momentum && momentum.series.length > 4 && (
+        <MomentumWave data={momentum} />
+      )}
 
       {match.blurb && match.blurb.paragraph && (
         <section

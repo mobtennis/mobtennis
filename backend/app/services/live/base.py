@@ -105,3 +105,11 @@ class LiveScoresProvider(ABC):
     @abstractmethod
     async def fetch_tournaments(self) -> list[TournamentMeta]:
         """Full tournament catalog (every brand the provider knows about)."""
+
+    async def fetch_match_pbp(self, external_id: str) -> list | None:
+        """Point-by-point array for one match by provider id, or None.
+
+        Concrete default returns None so providers without a single-match
+        endpoint (or the noop) need no override.
+        """
+        return None
