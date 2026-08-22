@@ -59,7 +59,7 @@ MAX_AGE_S = 5 * 60
 # Hard cap on concurrent subscribers. If we ever blow past this, the
 # server is unhealthy or under attack and accepting more connections
 # only digs the hole deeper.
-MAX_SUBSCRIBERS = 200
+MAX_SUBSCRIBERS = 500
 
 
 @router.get("/stream")

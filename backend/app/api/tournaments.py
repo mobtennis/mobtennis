@@ -9,6 +9,7 @@ from app.api._helpers import (
     exclude_junior_rounds,
     match_to_summary,
     player_summary,
+    single_flight,
 )
 from app.data.tournament_records import get_records
 from app.db.session import get_session
@@ -628,19 +629,20 @@ def _compute_index_sections(session: Session) -> list[tuple[str, str, list[Index
 # tail end. A short TTL keeps the data fresh enough (live_count /
 # today_count change minute-to-minute, not second-to-second) while
 # letting every burst of concurrent requests reuse the same compute.
-_INDEX_CACHE: dict[str, object] = {"sections": None, "expires_at": 0.0}
+import threading as _threading
+
+_INDEX_CACHE: dict[str, tuple[float, list]] = {}
 _INDEX_CACHE_TTL = 30.0  # seconds
+_INDEX_LOCK = _threading.Lock()
 
 
 def _cached_index_sections(session: Session) -> list[tuple[str, str, list[IndexTournament]]]:
-    import time
-    now = time.monotonic()
-    if _INDEX_CACHE["sections"] is not None and _INDEX_CACHE["expires_at"] > now:
-        return _INDEX_CACHE["sections"]  # type: ignore[return-value]
-    sections = _compute_index_sections(session)
-    _INDEX_CACHE["sections"] = sections
-    _INDEX_CACHE["expires_at"] = now + _INDEX_CACHE_TTL
-    return sections
+    # single_flight: only one request recomputes the (expensive) sections on
+    # expiry; concurrent requests block briefly then read the fresh value.
+    return single_flight(
+        _INDEX_CACHE, "sections", _INDEX_CACHE_TTL, _INDEX_LOCK,
+        lambda: _compute_index_sections(session),
+    )
 
 
 @router.get("/index", response_model=IndexResponse)
@@ -995,9 +997,9 @@ def get_tournament_current(
 
 
 # Small in-process cache mirroring /api/matches/live — same reasoning.
-import time as _time2
 _TOURNAMENT_MATCHES_CACHE: dict[tuple[str, str, str | None, int], tuple[float, list]] = {}
 _TOURNAMENT_MATCHES_CACHE_TTL = 5.0
+_TOURNAMENT_MATCHES_LOCK = _threading.Lock()
 
 
 @router.get("/{tour}/{slug}/matches", response_model=list[MatchSummary])
@@ -1031,10 +1033,16 @@ def tournament_matches_current(
     """
     canonical = _canonical_url_slug(slug)
     cache_key = (tour.value, canonical, status, limit)
-    hit = _TOURNAMENT_MATCHES_CACHE.get(cache_key)
-    if hit and (_time2.monotonic() - hit[0]) < _TOURNAMENT_MATCHES_CACHE_TTL:
-        return hit[1]
+    return single_flight(
+        _TOURNAMENT_MATCHES_CACHE, cache_key, _TOURNAMENT_MATCHES_CACHE_TTL,
+        _TOURNAMENT_MATCHES_LOCK,
+        lambda: _compute_tournament_matches(tour, slug, status, limit, session),
+    )
 
+
+def _compute_tournament_matches(
+    tour: Tour, slug: str, status: str | None, limit: int, session: Session
+) -> list[MatchSummary]:
     t = _resolve_current_edition(session, tour, slug)
     if not t:
         raise HTTPException(404, "Tournament not found")
@@ -1068,9 +1076,7 @@ def tournament_matches_current(
         from app.api._helpers import filter_status
         stmt = filter_status(stmt, status)
     stmt = stmt.order_by(Match.scheduled_at).limit(limit)
-    out = [match_to_summary(session, m) for m in session.exec(stmt).all()]
-    _TOURNAMENT_MATCHES_CACHE[cache_key] = (_time2.monotonic(), out)
-    return out
+    return [match_to_summary(session, m) for m in session.exec(stmt).all()]
 
 
 # Year-specific matches endpoint — used by ChampionsList's lazy bracket

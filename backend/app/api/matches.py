@@ -1,4 +1,5 @@
 import json
+import threading
 from datetime import datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import case
 from sqlmodel import Session, select
 
-from app.api._helpers import exclude_junior_rounds, match_to_summary
+from app.api._helpers import exclude_junior_rounds, match_to_summary, single_flight
 from app.db.session import get_session
 from app.models.match import Match, MatchStatus
 from app.models.player import Player
@@ -44,9 +45,9 @@ FEATURED_HORIZON = timedelta(hours=36)
 # frontend can pass `cache: 'no-store'` and get fresh-ish data on
 # every request, while N concurrent visitors during a busy Slam day
 # don't multiply into N concurrent SQL queries.
-import time as _time
 _LIVE_CACHE: dict[tuple[int], tuple[float, list]] = {}
 _LIVE_CACHE_TTL = 5.0  # seconds
+_LIVE_LOCK = threading.Lock()
 
 
 @router.get("/live", response_model=list[MatchSummary])
@@ -54,15 +55,16 @@ def live_matches(
     limit: int = Query(100, ge=1, le=200),
     session: Session = Depends(get_session),
 ):
-    # 5-second in-process cache. Burst of clicks during a tense game
-    # all hit the same cached payload; outside the burst, every
-    # request hits the SQL. The TTL is short enough that "30 seconds
-    # behind reality" isn't a thing the user can notice.
-    cache_key = (limit,)
-    hit = _LIVE_CACHE.get(cache_key)
-    if hit and (_time.monotonic() - hit[0]) < _LIVE_CACHE_TTL:
-        return hit[1]
+    # 5-second in-process cache with single-flight (see single_flight):
+    # a burst of clicks during a tense game reuses one payload, and only
+    # ONE request recomputes when the cache expires — no stampede.
+    return single_flight(
+        _LIVE_CACHE, (limit,), _LIVE_CACHE_TTL, _LIVE_LOCK,
+        lambda: _compute_live(limit, session),
+    )
 
+
+def _compute_live(limit: int, session: Session) -> list[MatchSummary]:
     # Live + suspended (rain delays) keep their in-progress score
     # visible. We ALSO return finished matches whose scheduled_at is
     # within the last 36 hours — wide enough that for any client
@@ -115,9 +117,7 @@ def live_matches(
         .limit(limit)
     )
     stmt = exclude_junior_rounds(stmt)
-    out = [match_to_summary(session, m) for m in session.exec(stmt).all()]
-    _LIVE_CACHE[cache_key] = (_time.monotonic(), out)
-    return out
+    return [match_to_summary(session, m) for m in session.exec(stmt).all()]
 
 
 @router.get("/today", response_model=list[MatchSummary])

@@ -14,26 +14,25 @@ import { LiveStreamRefresh } from "@/components/LiveStreamRefresh";
 import { SectionHeader } from "@/components/SectionHeader";
 import { isLocalToday } from "@/lib/format";
 
-// Disable Vercel's page-level ISR cache on the home page — it's the
-// live tab, and first-load freshness matters during Slams. Without
-// this, Vercel CDN serves stale HTML (`x-vercel-cache: STALE` /
-// `age: N`) on the first hit of each ~30s window even though the
-// fetches inside have `revalidate: 0`. The backend caches keep load
-// bounded (5s in-process on /matches/live, 30s on /tournaments/index).
-export const revalidate = 0;
+// Short page-level ISR (was 0/fully-dynamic). Under a traffic spike this
+// lets Vercel's edge serve the home HTML from cache instead of rendering —
+// and calling the backend — on every hit. Live scores stay current
+// regardless: LiveStreamRefresh + per-card SSE overlay update the DOM
+// client-side, so a ≤20s-old shell is corrected in real time. The tradeoff
+// is only that a brand-new match/section can take up to 20s to appear.
+export const revalidate = 20;
 
 export default async function HomePage() {
   const [live, upcomingFeatured, news, videos, tIndex] = await Promise.all([
-    // Live-data fetches: revalidate: 0 ⇒ no Next.js fetch-cache.
-    // Backend has its own 5-second in-process cache on /matches/live
-    // and 30s on /tournaments/index, so concurrent visitors don't
-    // multiply into N SQL queries — but every router.refresh() (from
-    // SSE) actually sees fresh data, which is the whole point.
-    api<MatchSummary[]>("/api/matches/live", { revalidate: 0 }).catch(() => []),
+    // Live-data fetches aligned with the page's 20s ISR window; the
+    // client-side SSE overlay keeps scores live between renders, so these
+    // don't need to be fully dynamic. Backend also single-flights these
+    // caches, so even a cache-miss stampede collapses to one recompute.
+    api<MatchSummary[]>("/api/matches/live", { revalidate: 20 }).catch(() => []),
     api<MatchSummary[]>("/api/matches/upcoming-featured", { revalidate: 60 }).catch(() => []),
     api<NewsItemSummary[]>("/api/news?limit=8", { revalidate: 900 }).catch(() => []),
     api<VideoItemSummary[]>("/api/videos?limit=8", { revalidate: 900 }).catch(() => []),
-    api<TournamentsIndexResponse>("/api/tournaments/index", { revalidate: 0 }).catch(() => ({
+    api<TournamentsIndexResponse>("/api/tournaments/index", { revalidate: 30 }).catch(() => ({
       sections: [] as TournamentsIndexResponse["sections"],
     })),
   ]);

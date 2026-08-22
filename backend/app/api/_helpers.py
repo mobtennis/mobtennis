@@ -1,7 +1,41 @@
 import json
+import threading
+import time
+from collections.abc import Callable
+from typing import TypeVar
 
 from sqlalchemy import or_
 from sqlmodel import Session, select
+
+_T = TypeVar("_T")
+
+
+def single_flight(
+    store: dict,
+    key,
+    ttl: float,
+    lock: threading.Lock,
+    compute: Callable[[], _T],
+) -> _T:
+    """Return a cached value or compute it once under a lock (thundering-herd
+    protection). Endpoints are sync `def` handlers run in Starlette's
+    threadpool, so a threading.Lock is the right primitive: on cache expiry
+    the first thread computes while the rest block briefly and then read the
+    fresh value — instead of N concurrent recomputes of the same expensive
+    query (the stampede that caused 10–17s latency cliffs under load).
+
+    `store` holds {key: (monotonic_ts, value)}.
+    """
+    hit = store.get(key)
+    if hit and (time.monotonic() - hit[0]) < ttl:
+        return hit[1]
+    with lock:
+        hit = store.get(key)  # re-check — another thread may have filled it
+        if hit and (time.monotonic() - hit[0]) < ttl:
+            return hit[1]
+        value = compute()
+        store[key] = (time.monotonic(), value)
+        return value
 
 from app.models.match import Match, MatchStatus
 from app.models.player import Player
