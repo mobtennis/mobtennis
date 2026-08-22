@@ -43,7 +43,17 @@ a { color: inherit; }
   50%      { transform: scale(1);   opacity: 1; }
 }
 .momentum-dot { animation: momentum-throb 1.3s ease-in-out infinite; }
+
+/* Undulating wave — the "momentum building" placeholder on the match page,
+   echoing the real momentum wave. The path holds two identical periods and
+   scrolls left by exactly one, so the loop is seamless. */
+@keyframes momentum-wave {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.momentum-wave-scroll { width: 200%; animation: momentum-wave 3.2s linear infinite; }
 @media (prefers-reduced-motion: reduce) {
   .momentum-bar { animation: none; transform: scaleY(0.6); }
   .momentum-dot { animation: none; opacity: 0.7; }
+  .momentum-wave-scroll { animation: none; width: 100%; }
 }
