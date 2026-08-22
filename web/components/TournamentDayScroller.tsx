@@ -26,24 +26,38 @@ export function TournamentDayScroller({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const selectedRef = useRef<HTMLButtonElement | null>(null);
 
-  // Scroll the selected chip into view on mount / when it changes,
-  // so opening the page on a Slam Day 5 lands you on the right chip
-  // instead of Day 1 off-screen to the left.
+  // Keep the selected chip (today, by default) centred and visible. This
+  // must re-run not only when the selection changes but also when the set
+  // of days changes: on the live page the day list is bootstrapped with
+  // today + upcoming, then the full fetch prepends every past day. That
+  // grows the row to the left of today WITHOUT changing `selectedDate`, so
+  // a selection-only dependency left today crowded off to the right where
+  // the user had to swipe to find it.
+  const daysKey = days.map((d) => d.date).join("|");
   useEffect(() => {
-    if (!selectedRef.current || !containerRef.current) return;
     const el = selectedRef.current;
     const parent = containerRef.current;
-    const elLeft = el.offsetLeft;
+    if (!el || !parent || parent.clientWidth === 0) return;
+    // Position the chip in the scroll container's content coordinates via
+    // getBoundingClientRect — `offsetLeft` is relative to the nearest
+    // positioned ancestor (here the page, not this scroller), which threw
+    // the centring maths off by the container's own page offset.
+    const elRect = el.getBoundingClientRect();
+    const parentRect = parent.getBoundingClientRect();
+    const elLeft = elRect.left - parentRect.left + parent.scrollLeft;
     const elRight = elLeft + el.offsetWidth;
     const viewLeft = parent.scrollLeft;
     const viewRight = viewLeft + parent.clientWidth;
     if (elLeft < viewLeft || elRight > viewRight) {
+      // Instant, not smooth: this is "keep today in view", not a gesture —
+      // today should simply already be there on load, with no animated
+      // swipe that reads as the very confusion we're fixing.
       parent.scrollTo({
         left: Math.max(0, elLeft - parent.clientWidth / 2 + el.offsetWidth / 2),
-        behavior: "smooth",
+        behavior: "auto",
       });
     }
-  }, [selectedDate]);
+  }, [selectedDate, daysKey]);
 
   if (days.length <= 1) return null;
 
