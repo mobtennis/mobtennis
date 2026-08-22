@@ -32,12 +32,14 @@ function Equalizer({ h }: { h: number }) {
 
 export function MomentumBuilding({ size = "mini" }: { size?: "mini" | "panel" }) {
   if (size === "mini") {
+    // A single throbbing dot in the card's centre slot — the equalizer is too
+    // busy in a dense list. The tooltip carries the explanation.
     return (
       <span
-        className="flex items-center"
+        className="flex items-center justify-center"
         title="Momentum builds over the first few games"
       >
-        <Equalizer h={16} />
+        <span className="momentum-dot inline-block h-2 w-2 rounded-full bg-text-muted" />
       </span>
     );
   }
