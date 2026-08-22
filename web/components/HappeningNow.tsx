@@ -12,7 +12,6 @@ import { LiveTournamentDayBlock } from "@/components/LiveTournamentDayBlock";
 import { MatchCard } from "@/components/MatchCard";
 import { MatchFilterBar } from "@/components/MatchFilters";
 import { SectionHeader } from "@/components/SectionHeader";
-import { SpotTheBallHomeCard } from "@/components/SpotTheBallHomeCard";
 import { TournamentCard } from "@/components/TournamentCard";
 import { passesFilter } from "@/lib/match-filters";
 import { useMatchFilters } from "@/lib/match-filters-client";
@@ -99,15 +98,8 @@ export function HappeningNow({ liveMatches, upcomingFeatured, tIndex }: Props) {
       <div className="mt-2 space-y-3">
         <MatchFilterBar />
         {renderedBlocks.map((block, i) => (
-          <React.Fragment key={i}>
-            {block}
-            {i === 0 && <SpotTheBallHomeCard />}
-          </React.Fragment>
+          <React.Fragment key={i}>{block}</React.Fragment>
         ))}
-        {/* If there are zero rendered tournament blocks (all filtered
-            out by the user's pill selection), the game card still
-            shows — useful idle-state UX. */}
-        {renderedBlocks.length === 0 && <SpotTheBallHomeCard />}
       </div>
     </section>
   );
