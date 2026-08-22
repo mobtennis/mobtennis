@@ -82,8 +82,16 @@ export default async function TournamentPage({ params }: { params: Params }) {
     // queries; the per-request Next.js fetch cache was redundant AND
     // defeated the SSE-driven refresh by returning cached data inside
     // its 15s window.
+    //
+    // limit=400: the endpoint orders by scheduled_at ASC and truncates,
+    // so a small cap silently drops the LATEST matches — i.e. today's
+    // live/current ones — for a big event. Cincinnati alone is ~190
+    // main-draw + doubles matches; 128 cut today off entirely, leaving
+    // the page showing only finished early rounds while the live page
+    // (fed by /api/matches/live + SSE, uncapped) stayed current. 400
+    // comfortably covers a full single-tour field (127-draw + doubles).
     api<MatchSummary[]>(
-      `/api/tournaments/${tourEnum}/${slug}/matches?limit=128`,
+      `/api/tournaments/${tourEnum}/${slug}/matches?limit=400`,
       { revalidate: 0 },
     ).catch(() => []),
     api<TournamentChampion[]>(
