@@ -68,9 +68,15 @@ export function MatchDetailLiveHeader({ initial }: { initial: MatchDetail }) {
         />
       </div>
 
-      {!isLive && !isSuspended && match.scheduled_at && (
+      {/* Start time is only shown for upcoming matches — it tells the user
+          when to tune in. On finished matches it's noise at best; for
+          history imported from Sackmann the field is a bogus midnight
+          placeholder that rendered a meaningless "00:00". We don't have a
+          reliable match-duration source, so we show nothing rather than a
+          wrong number. */}
+      {match.status === "scheduled" && match.scheduled_at && (
         <div className="mt-3 text-center text-xs text-text-muted">
-          <LocalTime iso={match.scheduled_at} variant="time" />
+          <LocalTime iso={match.scheduled_at} variant="match" />
         </div>
       )}
       {isSuspended && (

@@ -88,8 +88,18 @@ def compute_momentum(
         return None
 
     # 1. Parse each game into flat facts.
+    #
+    # api-tennis lists a set's real games under "Set N" (including a single
+    # summary row for a tiebreak-decided set, e.g. score "7 - 6") AND expands
+    # the tiebreak point-by-point under a separate "Set N TieBreak" group. We
+    # drop the TieBreak point rows so each tiebreak collapses to that one
+    # summary game — otherwise every TB point counted as a full game, over-
+    # weighting tiebreaks and littering the wave with phantom holds/breaks.
     parsed: list[dict] = []
     for g in pointbypoint:
+        set_label = g.get("set_number") or ""
+        if "tiebreak" in set_label.lower():
+            continue
         served = g.get("player_served")
         winner = g.get("serve_winner")
         if served not in (_FIRST, _SECOND) or winner not in (_FIRST, _SECOND):
@@ -130,15 +140,24 @@ def compute_momentum(
         winner = p["winner"]
         is_break = p["is_break"]
 
-        if is_break:
+        if is_set_end(i) and set_was_tiebreak(i):
+            # Tiebreak decider — the whole tiebreak as one event. The summary
+            # row's server "loses" it by convention, so override is_break: no
+            # ⚡ marker, no break weight, just the set-in-a-tiebreak weight.
+            weight, kind = W_SET_TB, "set_tb"
+            is_break = False
+        elif is_break:
             if prev_break_by and prev_break_by != winner:
                 weight, kind = W_BREAK_BACK, "break_back"
             else:
                 weight, kind = W_BREAK, "break"
+            if is_set_end(i):
+                weight += W_SET
+                kind = "set_break"
         else:
             # A hold. Reward surviving pressure — but a set/match point *inside*
-            # a set-ending hold is the server converting their own, handled by
-            # the set weight below, so only credit "saved" on non-set-end holds.
+            # a set-ending hold is the server converting their own, so only
+            # credit "saved" on non-set-end holds.
             if not is_set_end(i) and p["had_mp"]:
                 weight, kind = W_HOLD_SAVE_MP, "hold_save_mp"
             elif not is_set_end(i) and p["had_sp"]:
@@ -147,10 +166,9 @@ def compute_momentum(
                 weight, kind = W_HOLD_SAVE_BP, "hold_save_bp"
             else:
                 weight, kind = W_HOLD, "hold"
-
-        if is_set_end(i):
-            weight += W_SET_TB if set_was_tiebreak(i) else W_SET
-            kind = ("set_tb" if set_was_tiebreak(i) else "set") + ("_break" if is_break else "")
+            if is_set_end(i):
+                weight += W_SET
+                kind = "set"
 
         signed = weight if winner == _FIRST else -weight
         m = m * LAMBDA + signed
