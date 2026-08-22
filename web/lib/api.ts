@@ -153,6 +153,9 @@ export type MatchSummary = {
   bracket_position: number | null;
   player1_seed: number | null;
   player2_seed: number | null;
+  /** ~16 downsampled momentum values (-100..100, player1-oriented) for a
+   *  sparkline teaser. null when we have no point-by-point for the match. */
+  momentum_spark: number[] | null;
 };
 
 export type MomentumPoint = {

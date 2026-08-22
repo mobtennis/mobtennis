@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy import or_
 from sqlmodel import Session, select
 
@@ -6,6 +8,29 @@ from app.models.player import Player
 from app.models.tournament import Tournament
 from app.schemas.match import MatchSummary
 from app.schemas.player import PlayerSummary
+
+
+def _momentum_spark(momentum_json: str | None, n: int = 16) -> list[int] | None:
+    """Downsample a stored momentum series to a tiny sparkline for listing
+    cards — a teaser that hints the full wave is on the match page.
+
+    Returns ~n evenly-spaced momentum values (−100..100, player1-oriented) or
+    None. Cheap: most matches have no momentum_json (skipped); the ones that
+    do parse a small blob. We never ship the full series to list endpoints.
+    """
+    if not momentum_json:
+        return None
+    try:
+        series = (json.loads(momentum_json) or {}).get("series") or []
+    except (ValueError, TypeError):
+        return None
+    ms = [round(pt.get("m", 0)) for pt in series if isinstance(pt, dict)]
+    if len(ms) < 4:
+        return None
+    if len(ms) <= n:
+        return ms
+    step = (len(ms) - 1) / (n - 1)
+    return [ms[round(i * step)] for i in range(n)]
 
 
 def player_summary(p: Player | None) -> PlayerSummary | None:
@@ -63,6 +88,7 @@ def match_to_summary(session: Session, m: Match) -> MatchSummary:
         bracket_position=m.bracket_position,
         player1_seed=m.player1_seed,
         player2_seed=m.player2_seed,
+        momentum_spark=_momentum_spark(m.momentum_json),
     )
 
 

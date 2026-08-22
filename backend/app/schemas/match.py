@@ -55,6 +55,10 @@ class MatchSummary(BaseModel):
     bracket_position: int | None = None
     player1_seed: int | None = None
     player2_seed: int | None = None
+    # Tiny downsampled momentum series (~16 values, −100..100, player1-
+    # oriented) for a sparkline teaser on listing cards. None when we have no
+    # point-by-point for the match. Full series lives at /matches/{id}/momentum.
+    momentum_spark: list[int] | None = None
 
 
 class MatchBlurb(BaseModel):

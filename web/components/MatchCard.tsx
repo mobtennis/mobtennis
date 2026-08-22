@@ -7,6 +7,7 @@ import type { MatchSummary } from "@/lib/api";
 import { formatRound, formatScore, formatSetScore } from "@/lib/format";
 import { LiveDot, SuspendedDot } from "@/components/LiveDot";
 import { LocalTime } from "@/components/LocalTime";
+import { MomentumSpark } from "@/components/MomentumSpark";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { PlayerHoverCard } from "@/components/PlayerHoverCard";
 import { useLiveMatch } from "@/lib/live-stream";
@@ -86,6 +87,20 @@ export function MatchCard({ match: initial, dense = false }: { match: MatchSumma
           )}
         </div>
       </div>
+
+      {/* Momentum teaser — only for matches we have point-by-point for.
+          Hints the full wave is a tap away; the whole card is the link. */}
+      {match.momentum_spark && match.momentum_spark.length > 1 && (
+        <div className="mt-2 flex items-center gap-2 border-t border-ink-700/60 pt-1.5 text-text-muted">
+          <span className="shrink-0 text-[8px] font-bold uppercase tracking-[0.14em]">
+            Momentum
+          </span>
+          <MomentumSpark spark={match.momentum_spark} className="h-4 min-w-0 flex-1" />
+          <span className="shrink-0 text-[9px] font-medium text-accent opacity-0 transition group-hover:opacity-100">
+            View →
+          </span>
+        </div>
+      )}
     </Link>
   );
 }
